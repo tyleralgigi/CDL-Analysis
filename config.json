@@ -1,0 +1,19 @@
+{
+    "API":{
+        "endpoints": ["breakpoint_players", "breakpoint_matches"]
+    },
+    "breakpoint_players":{
+        "url": ["https://www.breakingpoint.gg/api/playerStats"],
+        "table_name": "playerStats",
+        "method": "self.breakpoint_players()"
+    },
+    "breakpoint_matches":{
+        "url": ["https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/52.json",
+                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/53.json",
+                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/54.json"
+            ],
+        "table_name": "matches",
+        "method": "self.breakpoint_matches()"
+    }
+}
+
