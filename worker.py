@@ -1,7 +1,7 @@
 import json
 from dotenv import load_dotenv
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import pandas as pd
 import requests
 from datetime import datetime
@@ -56,15 +56,14 @@ class CDL_Worker:
             keys = response_df['pageProps'].keys()
             base_table_name = self.tableName
             for key in keys:
-                if key not in ['initialColorScheme','event','matches_eventPlacements','mainEventId']:
+                if key not in ['initialColorScheme', 'eventPlacements', 'mainEventId']:
                     self.tableName = base_table_name + "_" + key
                     try:
                         self.df = pd.DataFrame(response_df['pageProps'][key]).astype(str)
                         # print(self.df)
                         self.check_ids()
-                        if len(self.df) > 0:
-                            self.transform()
-                            self.loader('append')
+                        self.transform()
+                        self.loader('append')
                     except Exception as e:
                         print("Unable to make data frame for " + key + " : "+ str(e))
                     
@@ -72,17 +71,15 @@ class CDL_Worker:
             print(f"Failed to retrieve webpage: {response.status_code}")
 
     def check_ids(self):
-        try:
-            query = f'select id from public."{self.tableName}"'
-            print(query)
-            df = pd.read_sql_query(query, self.engine)
-            if not df.empty:
-                self.df = self.df[~self.df['id'].isin(df['id'])]
+        query = f'select * from public."{self.tableName}"'
+        print(query)
+        df = pd.read_sql_table(self.tableName, self.engine)
+        if not df.empty:
+            with self.engine.connect() as conn:
+                filtered_db_df = self.df[~self.df['id'].isin(df['id'])]
                 print("compared and len is: " + str(len(self.df)))
-        except Exception as e:
-            print("SQL error: "+ str(e))
-
-        
+                result = conn.execute(text(f'DELETE FROM public."{self.tableName}" WHERE id = ANY (ARRAY[{', '.join(f"'{id}'" for id in filtered_db_df)}]);'))
+                print(result)
 
     def transform(self):
         print("Transforming - Adding rundate")

@@ -8,7 +8,8 @@
         "method": "self.breakpoint_players()"
     },
     "breakpoint_matches":{
-        "url": ["https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/52.json",
+        "url": ["https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/49.json",
+                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/52.json",
                 "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/53.json",
                 "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/54.json"
             ],
