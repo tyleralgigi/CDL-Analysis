@@ -103,6 +103,45 @@ class CDL_Worker:
                 result = conn.execute(text(f'DELETE FROM public."{self.tableName}" WHERE id = ANY (ARRAY[{', '.join(f"'{id}'" for id in filtered_db_df)}]);'))
                 print(result)
 
+    def getRosters(self):
+        print("getRosters()")
+        self.df = pd.DataFrame()
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f"select name from public.matches_teams;"))
+            df = pd.DataFrame(result.fetchall())
+            teams = df['name'].to_list()
+            i = 1
+            for team in teams:
+                print(self.url + str(i) + "/" + str(team).replace(' ', '-')+".json")
+                response = requests.get((self.url + str(i) + "/" + str(team).replace(' ', '-')+".json"), headers = {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "apikey": self.apikey,
+                            "Authorization": "Bearer " + self.apikey
+                })
+                
+                response_js = response.json()
+                if "notFound" not in response_js:
+                    response_df = pd.DataFrame(response_js['pageProps']['team']['players'])
+                    if len(response_df) != 0:
+                        response_df = response_df[['id', 'tag']]
+                        response_df['team_id'] = response_js['pageProps']['team']['id']
+                        response_df['name'] = response_js['pageProps']['team']['name']
+                        response_df['match_wins'] = response_js['pageProps']['standings']['match_wins']
+                        response_df['match_losses'] = response_js['pageProps']['standings']['match_losses']
+                        response_df['match_win_percent'] = response_js['pageProps']['standings']['match_wins'] / (response_js['pageProps']['standings']['match_wins']+response_js['pageProps']['standings']['match_losses'])
+                        response_df['game_wins'] = response_js['pageProps']['standings']['game_wins']
+                        response_df['game_losses'] = response_js['pageProps']['standings']['game_losses']
+                        response_df['game_win_percent'] = response_js['pageProps']['standings']['game_wins'] / (response_js['pageProps']['standings']['game_wins']+response_js['pageProps']['standings']['game_losses'])
+                        # print(response_df)
+                        self.df = pd.concat([self.df, response_df])
+                else:
+                    print("notFound")
+                i += 1
+        print(self.df)
+        self.transform()
+        self.loader("replace")
+            
     def transform(self):
         print("Transforming - Adding rundate")
         now = datetime.now()
