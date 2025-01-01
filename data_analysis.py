@@ -8,7 +8,12 @@ import matplotlib.pyplot as plt
 from adjustText import adjust_text
 from scipy.stats import f_oneway
 import statsmodels.api as sm
-import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 class Data_Analysis():
     def dbconnector(self):
@@ -17,57 +22,81 @@ class Data_Analysis():
         self.POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
         self.engine = create_engine(f'postgresql://{"postgres"}:{self.POSTGRES_PASSWORD}@localhost:{"5432"}/{"Data"}')
 
+    def calculate_role_weights(self, df):
+        self.role_weights = {}
+        
+        # Features and target
+        X = df[['average_kills', 'average_assists', 'average_objective_time', 'average_death'
+                    ,'average_damage', 'assigned_role']]
+        y = df[['game_win_percent', 'match_win_percent']]
+        
+        for role in df['assigned_role'].unique():
+            role_df = df[df['assigned_role'] == role]
+            print(role)
+            
+            role_df = df[['average_kills', 'average_assists', 'average_objective_time', 'average_death'
+                    ,'average_damage']]
+            role_df = df[['game_win_percent', 'match_win_percent']]
+            
+            # Train Random Forest
+            model = RandomForestRegressor(random_state=42)
+            model.fit(X, y)
+
+            # self.role_weights[role] = dict(zip(X.columns, model.coef_))
+            
+            # Get feature importances
+            importances = model.feature_importances_
+            weights = importances / importances.sum()
+            self.role_weights[role] = dict(zip(X.columns, weights))
+
+        
+    def calculate_weighted_score(self, row):
+        weights = self.role_weights[row['assigned_role']]
+        score = (
+            row['average_kills'] * weights['average_kills'] +
+            row['average_assists'] * weights['average_assists'] +
+            row['average_objective_time'] * weights['average_objective_time'] +
+            row['average_death'] * weights['average_death']+
+            row['average_damage'] * weights['average_damage']
+        )
+        return score
+    
+    def calculate_player_rank(self):
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f"SELECT team_rosters.*, player_roles.* FROM public.team_rosters AS team_rosters JOIN public.player_roles AS player_roles ON player_roles.player_id = team_rosters.id;"))
+            df = pd.DataFrame(result.fetchall())
+            
+            self.calculate_role_weights(df)
+            df['weighted_score'] = df.apply(self.calculate_weighted_score, axis=1)
+            df['rank'] = df['weighted_score'].rank(ascending=False).astype(int)
+            
+            scaler = MinMaxScaler()
+            self.player_stats = df
+            self.player_stats['normalized_score'] = scaler.fit_transform(self.player_stats[['weighted_score']])
+            print(self.player_stats)
+
     def get_player_data(self):
         print("get_player_data")
         with self.engine.connect() as conn:
-            result = conn.execute(text(f"select player_id, player_tag, match_id, kills, deaths, damage, assists, hill_time, plant_count, defuse_count, zone_tier_capture_count, mode_id, map_id from public.\"playerStatsDetails\";"))
+            result = conn.execute(text(f"SELECT team_rosters.*, player_roles.* FROM public.team_rosters AS team_rosters JOIN public.player_roles AS player_roles ON player_roles.player_id = team_rosters.id;"))
             df = pd.DataFrame(result.fetchall())
 
-            df = df.fillna(0)
-            print(df['hill_time'])
-            if not df.isnull().values.any():  # Shows the count of NaN values in each column
-                #Normailzing data
-                grouped_stats = df.groupby(['map_id', 'mode_id']).agg({
-                    'kills': ['mean', 'std'],
-                    'damage': ['mean', 'std'],
-                    'assists': ['mean', 'std'],
-                    'deaths': ['mean', 'std'],
-                    'hill_time': ['mean', 'std'],
-                    'zone_tier_capture_count': ['mean', 'std']
-                }).reset_index()
-                
-                grouped_stats.columns = ['map_id', 'mode_id', 
-                            'kills_mean', 'kills_std', 
-                            'damage_mean', 'damage_std',
-                            'assists_mean', 'assists_std',  
-                            'deaths_mean', 'deaths_std', 
-                            'hill_time_mean', 'hill_time_std', 
-                            'zone_tier_capture_count_mean', 'zone_tier_capture_count_std']
-                
-                grouped_stats.fillna(0, inplace=True)
-                
-                df = df.merge(grouped_stats, on=['map_id', 'mode_id'])
-                df = df.fillna(0)
-                df['kills_normalized'] = (df['kills'] - df['kills_mean']) / df['kills_std']
-                df['deaths_normalized'] = (df['deaths'] - df['deaths_mean']) / df['deaths_std']
-                df['damage_normalized'] = (df['damage'] - df['damage_mean']) / df['damage_std']
-                df['assists_normalized'] = (df['assists'] - df['assists_mean']) / df['assists_std']
-                df['hill_time_normalized'] = (df['hill_time'] - df['hill_time_mean']) / df['hill_time_std']
-                df['zone_tier_capture_count_normalized'] = (df['zone_tier_capture_count'] - df['zone_tier_capture_count_mean']) / df['zone_tier_capture_count_std']
-                df['objective_normalized'] = df[['hill_time_normalized', 'zone_tier_capture_count_normalized']].mean(axis=1)
-                
-                # Drop the original columns that were combined
-                df.drop(['hill_time_normalized', 'zone_tier_capture_count_normalized'], axis=1, inplace=True)
+            # Features and target
+            X = df[['average_kills', 'average_assists', 'average_objective_time', 'average_death'
+                        ,'average_damage', 'assigned_role']]
+            y = df[['game_win_percent', 'match_win_percent']]
 
-                # df['zone_tier_capture_count_normalized'] = (df['zone_tier_capture_count'] - df['zone_tier_capture_count_mean']) / df['zone_tier_capture_count_std']
-                df = df.fillna(0)
-                self.df = df[['player_id', 'kills_normalized','deaths_normalized',
-                            'damage_normalized','assists_normalized','objective_normalized']]
-                del df
-            else:
-                print(df['hill_time'])
-                
-                
+            # Train Random Forest
+            model = RandomForestRegressor(random_state=42)
+            model.fit(X, y)
+
+            # Get feature importances
+            importances = model.feature_importances_
+            weights = importances / importances.sum()
+            print("Feature Importances as Weights:", weights)
+            #kills,      assists', ' obj,     ' death',   damage',    'assigned_role'
+            # 0.23621846 0.18929841 0.13319174 0.31498264 0.09520257 0.03110618
+
     def role_classification(self):
         print("role_classification")
         # Normalize the data
@@ -205,13 +234,183 @@ class Data_Analysis():
             
             # sns.pairplot(result, x_vars=['Slayer', 'Support', 'Objective Player'], y_vars='match_win_percent', kind='reg')
             # plt.show()
-                
+
+    def probabilistic_model(self):
+        
+        self.calculate_player_rank()
+        
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f"SELECT team_rosters.*, player_roles.* FROM public.team_rosters AS team_rosters JOIN public.player_roles AS player_roles ON player_roles.player_id = team_rosters.id;"))
+            rosters = pd.DataFrame(result.fetchall())
+            
+            result = conn.execute(text(f"select id, team_1_id, team_2_id, team_1_score, team_2_score, winner_id, datetime from public.matches_matches where status = 'complete'"))
+            matches = pd.DataFrame(result.fetchall())
+            print(matches)
+            
+            # Step 1: Count the role composition per team
+            role_composition = rosters.groupby(['team_id', 'role']).size().unstack(fill_value=0).reset_index()
+            print(role_composition)
+            
+            # Step 2: Add the team name and win rate
+            team_stats = (
+                rosters.groupby('team_id')
+                .agg(
+                    team_name=('name', 'first'),
+                    match_win_percent=('match_win_percent', 'first'),  # Assuming win rates are the same for all players in a team
+                    total_game_wins=('game_win_percent', 'first')
+                )
+                .reset_index()
+            )
+            print(team_stats)
+            
+            # Step 3: Merge role composition with team stats
+            teams = pd.merge(role_composition, team_stats, on='team_id')
+            print(result)
+            
+                        # Aggregate ranks to team-level metrics
+            team_ranks = self.player_stats.groupby('team_id')['rank'].mean().reset_index()
+            team_ranks.rename(columns={'rank': 'avg_team_rank'}, inplace=True)
+            
+            # Ensure consistent data types
+            matches['team_1_id'] = matches['team_1_id'].astype(str)
+            matches['team_2_id'] = matches['team_2_id'].astype(str)
+            teams['team_id'] = teams['team_id'].astype(str)
+            team_ranks['team_id'] = team_ranks['team_id'].astype(str)
+            
+            teams = teams.merge(team_ranks[['avg_team_rank','team_id']], left_on='team_id', right_on='team_id', how='left')
+            
+            # Merge to add team_1 composition
+            matches = matches.merge(teams, left_on='team_1_id', right_on='team_id', how='left')
+            matches.drop(columns=['team_id' ], inplace=True)
+
+            # Merge to add team_2 composition
+            matches = matches.merge(teams, left_on='team_2_id', right_on='team_id', how='left')
+            
+            matches.drop(columns=['team_id', 'team_name_x', 'team_name_y' , 'team_1_id', 'team_2_id', 'id', 'datetime'], inplace=True)
+            print(matches.columns)
+            matches.rename(columns={'Objective Player_y': 'Objective Player_2',
+                                    'Slayer_y': 'Slayer_2',
+                                    'Support_y': 'Support_2',
+                                    "match_win_percent_y": 'match_win_percent_2',
+                                    "total_game_wins_y": 'total_game_wins_2',
+                                    "avg_team_rank_y": "avg_team_rank_2",
+                                    'Objective Player_x': 'Objective Player_1',
+                                    'Slayer_x': 'Slayer_1',
+                                    'Support_x': 'Support_1',
+                                    "match_win_percent_x": 'match_win_percent_1',
+                                    "total_game_wins_x": 'total_game_wins_1',
+                                    "avg_team_rank_x": "avg_team_rank_1",}, inplace=True)
+            
+            matches = matches.dropna()
+            print(matches)
+            print(matches.columns)
+            
+            # Feature engineering
+            matches['slayers_diff'] = matches['Slayer_1'].astype(float) - matches['Slayer_2'].astype(float)
+            matches['support_diff'] = matches['Support_1'].astype(float) - matches['Support_2'].astype(float)
+            matches['objective_diff'] = matches['Objective Player_1'].astype(float) - matches['Objective Player_1'].astype(float)
+            matches['win_rate_diff'] = matches['match_win_percent_1'].astype(float) - matches['total_game_wins_2'].astype(float)
+            matches['maps_won_diff'] = matches['team_1_score'].astype(float) - matches['team_2_score'].astype(float)
+            matches['winner_id'] = matches['winner_id'].astype(float)
+            matches['team_rank_diff'] = matches['avg_team_rank_1'].astype(float) - matches['avg_team_rank_2'].astype(float)
+            
+            # Final feature set
+            features = ['slayers_diff', 'support_diff', 'objective_diff', 'win_rate_diff', 'maps_won_diff', 'team_rank_diff']
+            target = 'winner_id'
+            
+            # Train-test split
+            X = matches[features]
+            y = matches[target]
+
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            
+            # Initialize and train the Random Forest Classifier
+            rf_model = RandomForestClassifier(random_state=42, n_estimators=50, max_depth=10, class_weight='balanced')
+            rf_model.fit(X_train, y_train)
+            # Predict on the test set
+            # y_pred = rf_model.predict(X_test)
+            # y_pred_proba = rf_model.predict_proba(X_test) # Probability for Team 1 winning
+
+            # Evaluate on the training set
+            y_train_pred = rf_model.predict(X_train)
+            train_accuracy = accuracy_score(y_train, y_train_pred)
+
+            # Evaluate on the test set
+            y_test_pred = rf_model.predict(X_test)
+            test_accuracy = accuracy_score(y_test, y_test_pred)
+
+            print("Training Accuracy:", train_accuracy)
+            print("Test Accuracy:", test_accuracy)
+
+            cv_scores = cross_val_score(rf_model, X, y, cv=5)
+            print("Cross-Validation Accuracy:", cv_scores.mean())
+            
+            # Stratified k-fold cross-validation
+            kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            cv_scores = cross_val_score(rf_model, X, y, cv=kf, scoring='accuracy')
+            print("Cross-Validation Scores:", cv_scores)
+            print("Mean Cross-Validation Accuracy:", cv_scores.mean())
+            
+            # Feature importance
+            feature_importances = pd.DataFrame({
+                'Feature': X.columns,
+                'Importance': rf_model.feature_importances_
+            }).sort_values(by='Importance', ascending=False)
+
+            print(feature_importances)
+
+            # Plot feature importance
+            plt.barh(feature_importances['Feature'], feature_importances['Importance'])
+            plt.xlabel('Importance')
+            plt.ylabel('Feature')
+            plt.title('Feature Importance')
+            plt.show()
+            # Evaluate
+            # print("Accuracy:", accuracy_score(y_test, y_pred))
+            # print("Classification Report:\n", classification_report(y_test, y_pred))
+
+            # Calculate ROC AUC (for binary classification)
+            if len(y.unique()) == 2:
+                roc_auc = roc_auc_score(y_test, y_pred_proba)
+                print("ROC AUC Score:", roc_auc)
+            # Train the logistic regression model
+            # model = LogisticRegression(multi_class='multinomial', solver='lbfgs')
+            # model.fit(X_train, y_train)
+
+            # Predict probabilities for test set
+            # y_pred_proba = model.predict_proba(X_test)  # This should return a 2D array
+
+            # y_pred_proba = model.predict_proba(X_test)[:, 1]  # Probability of team_id_1 winningq
+
+            # Evaluate the model
+            # print("Accuracy:", accuracy_score(y_test, model.predict(X_test)))
+            # print("ROC AUC Score:", roc_auc_score(y_test, y_pred_proba, multi_class='ovo') )
+            # print("Classification Report:\n", classification_report(y_test, model.predict(X_test)))
+
+    def player_ranked(self):
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f"SELECT team_rosters.*, player_roles.* FROM public.team_rosters AS team_rosters JOIN public.player_roles AS player_roles ON player_roles.player_id = team_rosters.id;"))
+            rosters = pd.DataFrame(result.fetchall())
+            
+            print(rosters)
+
+    def test_get_more_teams(self):
+        # Provide the URL or HTML file path containing the table
+        url = 'https://liquipedia.net/callofduty/Call_of_Duty_League'
+
+        # Use read_html to scrape all tables from the HTML
+        tables = pd.read_html(url)
+        print(tables)
+    
     def init(self):
         print("data analysis init")
         self.df = pd.DataFrame()
         self.dbconnector()
+        # self.calculate_player_rank()
         # self.get_player_data()
         # self.role_classification()
         # self.plot_role_classification()
-        self.team_comparison()
-        
+        # self.team_comparison()
+        # self.probabilistic_model()
+        self.test_get_more_teams()
+        # self.player_ranked()

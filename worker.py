@@ -146,7 +146,7 @@ class CDL_Worker:
         print("Transforming - Adding rundate")
         now = datetime.now()
         self.df['rundate'] = now.strftime("%Y%m%d")
-
+    
     def loader(self,method):
         print("Loading into DB")
         # Insert the DataFrame into a table
