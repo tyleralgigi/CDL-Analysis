@@ -49,7 +49,6 @@ class Data_Analysis():
             weights = importances / importances.sum()
             self.role_weights[role] = dict(zip(X.columns, weights))
 
-        
     def calculate_weighted_score(self, row):
         weights = self.role_weights[row['assigned_role']]
         score = (
@@ -177,7 +176,7 @@ class Data_Analysis():
             
             # Step 1: Count the role composition per team
             role_composition = teams.groupby(['team_id', 'role']).size().unstack(fill_value=0).reset_index()
-            print(role_composition)
+            # print(role_composition)
             
             # Step 2: Add the team name and win rate
             team_stats = (
@@ -189,11 +188,11 @@ class Data_Analysis():
                 )
                 .reset_index()
             )
-            print(team_stats)
+            # print(team_stats)
             
             # Step 3: Merge role composition with team stats
             result = pd.merge(role_composition, team_stats, on='team_id')
-            print(result)
+            # print(result)
             
             # Step 1: Create a role composition column
             result['role_composition'] = (
@@ -245,11 +244,11 @@ class Data_Analysis():
             
             result = conn.execute(text(f"select id, team_1_id, team_2_id, team_1_score, team_2_score, winner_id, datetime from public.matches_matches where status = 'complete'"))
             matches = pd.DataFrame(result.fetchall())
-            print(matches)
+            # print(matches)
             
             # Step 1: Count the role composition per team
             role_composition = rosters.groupby(['team_id', 'role']).size().unstack(fill_value=0).reset_index()
-            print(role_composition)
+            # print(role_composition)
             
             # Step 2: Add the team name and win rate
             team_stats = (
@@ -261,11 +260,11 @@ class Data_Analysis():
                 )
                 .reset_index()
             )
-            print(team_stats)
+            # print(team_stats)
             
             # Step 3: Merge role composition with team stats
             teams = pd.merge(role_composition, team_stats, on='team_id')
-            print(result)
+            # print(result)
             
                         # Aggregate ranks to team-level metrics
             team_ranks = self.player_stats.groupby('team_id')['rank'].mean().reset_index()
@@ -287,7 +286,7 @@ class Data_Analysis():
             matches = matches.merge(teams, left_on='team_2_id', right_on='team_id', how='left')
             
             matches.drop(columns=['team_id', 'team_name_x', 'team_name_y' , 'team_1_id', 'team_2_id', 'id', 'datetime'], inplace=True)
-            print(matches.columns)
+            # print(matches.columns)
             matches.rename(columns={'Objective Player_y': 'Objective Player_2',
                                     'Slayer_y': 'Slayer_2',
                                     'Support_y': 'Support_2',
@@ -302,8 +301,8 @@ class Data_Analysis():
                                     "avg_team_rank_x": "avg_team_rank_1",}, inplace=True)
             
             matches = matches.dropna()
-            print(matches)
-            print(matches.columns)
+            # print(matches)
+            # print(matches.columns)
             
             # Feature engineering
             matches['slayers_diff'] = matches['Slayer_1'].astype(float) - matches['Slayer_2'].astype(float)
@@ -357,7 +356,7 @@ class Data_Analysis():
                 'Importance': rf_model.feature_importances_
             }).sort_values(by='Importance', ascending=False)
 
-            print(feature_importances)
+            # print(feature_importances)
 
             # Plot feature importance
             plt.barh(feature_importances['Feature'], feature_importances['Importance'])
@@ -392,7 +391,7 @@ class Data_Analysis():
             result = conn.execute(text(f"SELECT team_rosters.*, player_roles.* FROM public.team_rosters AS team_rosters JOIN public.player_roles AS player_roles ON player_roles.player_id = team_rosters.id;"))
             rosters = pd.DataFrame(result.fetchall())
             
-            print(rosters)
+            # print(rosters)
 
     def test_get_more_teams(self):
         # Provide the URL or HTML file path containing the table
@@ -400,17 +399,17 @@ class Data_Analysis():
 
         # Use read_html to scrape all tables from the HTML
         tables = pd.read_html(url)
-        print(tables)
+        # print(tables)
     
     def init(self):
         print("data analysis init")
         self.df = pd.DataFrame()
         self.dbconnector()
-        # self.calculate_player_rank()
-        # self.get_player_data()
+        self.calculate_player_rank()
+        self.get_player_data()
         # self.role_classification()
-        # self.plot_role_classification()
-        # self.team_comparison()
-        # self.probabilistic_model()
-        self.test_get_more_teams()
+        self.plot_role_classification()
+        self.team_comparison()
+        self.probabilistic_model()
+        # self.test_get_more_teams()
         # self.player_ranked()
