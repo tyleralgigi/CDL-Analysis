@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, text
 import pandas as pd
 import requests
 from datetime import datetime
+import re
 
 class CDL_Worker:
     def dbconnector(self):
@@ -16,17 +17,17 @@ class CDL_Worker:
     def iterator(self):
         print("Iterating")
         with open('config.json', 'r') as f:
-            config = json.load(f)
-            self.endpoints = config['API']['endpoints']
-            self.apikey = config['API']['apikey'] #this is the key used in breakpoint api calls (is subject to be removed at any point)
-                    
+            self.config = json.load(f)
+            self.endpoints = self.config['API']['endpoints']
+            self.apikey = self.config['API']['apikey'] #this is the key used in breakpoint api calls (is subject to be removed at any point)
+            
         for endpoint in self.endpoints:
-            print(config[endpoint]['url'])
-            for url in config[endpoint]['url']:
+            print(self.config[endpoint]['url'])
+            for url in self.config[endpoint]['url']:
                 self.url = url
-                self.tableName = config[endpoint]['table_name']
+                self.tableName = self.config[endpoint]['table_name']
                 
-                eval(config[endpoint]['method'])
+                eval(self.config[endpoint]['method'])
 
     def breakpoint_players(self):
         print("Running breakpoint_players")
@@ -150,11 +151,18 @@ class CDL_Worker:
         df.columns = df.columns.str.replace('/', '', regex=True)
         df.columns = df.columns.str.replace(' ', '', regex=True)
         df.columns = df.columns.str.replace('&', '_', regex=True)
+        df.iloc[:, 0] = df.iloc[:, 0].str.replace(' ', '')
+
+        regex = re.compile(r'\d{4}')
+        year = regex.findall(url)
+        print(year)
+        df['year'] = year[0]
         
         df.to_sql(self.tableName, self.engine, if_exists="replace", index=False)
 
-    def fandom_past_stats(self):
+    def fandom_past_player_stats(self):
         self.df = pd.DataFrame()
+
         for url in self.url:
             print(url)
             tables = pd.read_html(url)
@@ -164,8 +172,64 @@ class CDL_Worker:
             df.columns = df.columns.str.replace('/', '', regex=True)
             df.columns = df.columns.str.replace(' ', '', regex=True)
             df.columns = df.columns.str.replace('&', '_', regex=True)
+            
+            col_0 = df.columns[0]
+            df.iloc[:, 0] = df.iloc[:, 0].str.replace('[^A-Za-z0-9]', '', regex=True)
+            
+            
+            regex = re.compile(r'\d{4}')
+            year = regex.findall(url)
+            df['year'] = year[0]
+            
             self.df = pd.concat([self.df, df] ,axis=0, ignore_index=True)
+        
+        
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f'select distinct id, tag from public."matches_allPlayers"'))
+            df1 = pd.DataFrame(result.fetchall())
+            # df1['temp'] = df1['tag'].str.slice(1)
+            
+            # print(df1)
+            self.df = pd.merge(self.df, df1, left_on=col_0, right_on='tag', how='left')
+            # self.df = self.df.drop(['Search_Destroy_FD', 'Search_Destroy_P', 'Search_Destroy_D.1'], axis=1, inplace=True)
+            # df = df[df['id'].notna()]
+            
+        self.loader("replace")
 
+    def fandom_past_team_stats(self):
+        self.df = pd.DataFrame()
+
+        for url in self.url:
+            print(url)
+            tables = pd.read_html(url)
+            df = tables[4]
+            df.columns = df.columns.map('_'.join)
+            df.drop('Overall_Unnamed: 0_level_1', axis=1, inplace=True)
+            df.columns = df.columns.str.replace('/', '', regex=True)
+            df.columns = df.columns.str.replace(' ', '', regex=True)
+            df.columns = df.columns.str.replace('&', '_', regex=True)
+            
+            print(df)
+            col_0 = df.columns[0]
+            df.iloc[:, 0] = df.iloc[:, 0].str.replace('[^A-Za-z0-9]', '', regex=True)
+            
+            regex = re.compile(r'\d{4}')
+            year = regex.findall(url)
+            df['year'] = year[0]
+            
+            self.df = pd.concat([self.df, df] ,axis=0, ignore_index=True)
+        
+        
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f'select distinct id, name_short from public.matches_teams'))
+            df1 = pd.DataFrame(result.fetchall())
+            # df1['temp'] = df1['tag'].str.slice(1)
+            
+            # print(df1)
+            self.df = pd.merge(self.df, df1, left_on=col_0, right_on='name_short', how='left')
+            # self.df = self.df.drop(['Search_Destroy_FD', 'Search_Destroy_P', 'Search_Destroy_D.1'], axis=1, inplace=True)
+            # df = df[df['id'].notna()]
+            
         self.loader("replace")
 
     def transform(self):
