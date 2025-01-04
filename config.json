@@ -1,6 +1,6 @@
 {
     "API":{
-        "endpoints": ["CDL_rosters","breakpoint_players","breakpoint_matches","players_stats"],
+        "endpoints": ["fandom_current_player_stats", "fandom_current_team_stats", "fandom_past_team_stats", "fandom_past_player_stats"],
         "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcGlpdWZ4Y2NpdWp1Z3pqdmd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NjE3ODg0MDgsImV4cCI6MTk3NzM2NDQwOH0.hwvv0krVgonNDoM7liZoUxKGgyff2BCNGnC0iCZKyJM"
     },
     "breakpoint_players":{
@@ -28,6 +28,28 @@
         "url": ["https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/teams/"],
         "table_name": "team_rosters",
         "method": "self.getRosters()"
+    },
+    "fandom_current_player_stats":{
+        "url":["https://cod-esports.fandom.com/wiki/Call_of_Duty_League/2025_Season/Player_Statistics"],
+        "table_name": "fandom_current_player_stats",
+        "method": "self.fandom_current_stats()"
+    },
+    "fandom_current_team_stats":{
+        "url":["https://cod-esports.fandom.com/wiki/Call_of_Duty_League/2025_Season/Team_Statistics"],
+        "table_name": "fandom_current_team_stats",
+        "method": "self.fandom_current_stats()"
+    },
+    "fandom_past_team_stats":{
+        "url":[["https://cod-esports.fandom.com/wiki/Call_of_Duty_League/2024_Season/Team_Statistics",
+            "https://cod-esports.fandom.com/wiki/Call_of_Duty_League/2023_Season/Team_Statistics"]],
+        "table_name": "fandom_past_team_stats",
+        "method": "self.fandom_past_stats()"
+    },
+    "fandom_past_player_stats":{
+        "url":[["https://cod-esports.fandom.com/wiki/Call_of_Duty_League/2024_Season/Player_Statistics",
+            "https://cod-esports.fandom.com/wiki/Call_of_Duty_League/2023_Season/Player_Statistics"]],
+        "table_name": "fandom_past_player_stats",
+        "method": "self.fandom_past_stats()"
     }
 }
 

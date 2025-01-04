@@ -141,7 +141,33 @@ class CDL_Worker:
         print(self.df)
         self.transform()
         self.loader("replace")
-            
+    
+    def fandom_current_stats(self):
+        tables = pd.read_html(self.url)
+        df = tables[4]
+        df.columns = df.columns.map('_'.join)
+        df.drop('Overall_Unnamed: 0_level_1', axis=1, inplace=True)
+        df.columns = df.columns.str.replace('/', '', regex=True)
+        df.columns = df.columns.str.replace(' ', '', regex=True)
+        df.columns = df.columns.str.replace('&', '_', regex=True)
+        
+        df.to_sql(self.tableName, self.engine, if_exists="replace", index=False)
+
+    def fandom_past_stats(self):
+        self.df = pd.DataFrame()
+        for url in self.url:
+            print(url)
+            tables = pd.read_html(url)
+            df = tables[4]
+            df.columns = df.columns.map('_'.join)
+            df.drop('Overall_Unnamed: 0_level_1', axis=1, inplace=True)
+            df.columns = df.columns.str.replace('/', '', regex=True)
+            df.columns = df.columns.str.replace(' ', '', regex=True)
+            df.columns = df.columns.str.replace('&', '_', regex=True)
+            self.df = pd.concat([self.df, df] ,axis=0, ignore_index=True)
+
+        self.loader("replace")
+
     def transform(self):
         print("Transforming - Adding rundate")
         now = datetime.now()
