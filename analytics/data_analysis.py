@@ -14,6 +14,9 @@ from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+import json
+
+rf_model = None
 
 class Data_Analysis():
     def dbconnector(self):
@@ -247,7 +250,9 @@ class Data_Analysis():
             # print(matches)
             
             # Step 1: Count the role composition per team
+            print("role comps")
             role_composition = rosters.groupby(['team_id', 'role']).size().unstack(fill_value=0).reset_index()
+            print(role_composition)
             # print(role_composition)
             
             # Step 2: Add the team name and win rate
@@ -270,6 +275,8 @@ class Data_Analysis():
             team_ranks = self.player_stats.groupby('team_id')['rank'].mean().reset_index()
             team_ranks.rename(columns={'rank': 'avg_team_rank'}, inplace=True)
             
+            print(team_ranks)
+            
             # Ensure consistent data types
             matches['team_1_id'] = matches['team_1_id'].astype(str)
             matches['team_2_id'] = matches['team_2_id'].astype(str)
@@ -277,6 +284,8 @@ class Data_Analysis():
             team_ranks['team_id'] = team_ranks['team_id'].astype(str)
             
             teams = teams.merge(team_ranks[['avg_team_rank','team_id']], left_on='team_id', right_on='team_id', how='left')
+            
+            teams.to_sql("teams_with_ranks", self.engine, if_exists="replace", index=False)
             
             # Merge to add team_1 composition
             matches = matches.merge(teams, left_on='team_1_id', right_on='team_id', how='left')
@@ -287,6 +296,9 @@ class Data_Analysis():
             
             matches.drop(columns=['team_id', 'team_name_x', 'team_name_y' , 'team_1_id', 'team_2_id', 'id', 'datetime'], inplace=True)
             # print(matches.columns)
+            
+            print(matches)
+            
             matches.rename(columns={'Objective Player_y': 'Objective Player_2',
                                     'Slayer_y': 'Slayer_2',
                                     'Support_y': 'Support_2',
@@ -386,6 +398,43 @@ class Data_Analysis():
             # print("ROC AUC Score:", roc_auc_score(y_test, y_pred_proba, multi_class='ovo') )
             # print("Classification Report:\n", classification_report(y_test, model.predict(X_test)))
 
+    def model_prediction(self):
+        print("running model predicitions")
+        team1_ids = None
+        team2_ids = None
+        with open('upcoming_game.json', 'r') as f:
+            data = pd.DataFrame(json.load(f))
+            data = data.T 
+            team1_ids = data['team1_id'].to_list()
+            team2_ids = data['team2_id'].to_list()
+            print(data)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f"select * from public.team_rosters where team_id = "))
+            rosters = pd.DataFrame(result.fetchall())
+            # print(rosters)
+            team1 = pd.DataFrame()
+            team2 = pd.DataFrame()
+            for i in range(len(team1_ids)):
+                team1_sql = conn.execute(text(f"select * from public.team_rosters where team_id = " + team1_ids[i]))
+                team2_sql = conn.execute(text(f"select * from public.team_rosters where team_id = " + team2_ids[i]))
+                
+                team1 = pd.concat([team1, pd.DataFrame(team1_sql.fetchall())], ignore_index=True)
+                team2 = pd.concat([team2, pd.DataFrame(team2_sql.fetchall())], ignore_index=True)
+
+
+            # merged_df = pd.merge(data, rosters, on='employee_id')
+            
+            # upcoming_matches = pd.DataFrame({
+            #     'slayers_diff': [1.2, -0.5, 0.7],
+            #     'support_diff': [0.3, -1.0, 0.6],
+            #     'rank_diff': [0.8, -0.4, 0.5],
+            #     'win_rate_diff': [0.1, -0.2, 0.15],
+            #     'maps_won_diff': [1, -1, 0],
+            #     'objective_diff': [0, 0.5, -0.3]
+            # })
+
+            
     def player_ranked(self):
         with self.engine.connect() as conn:
             result = conn.execute(text(f"SELECT team_rosters.*, player_roles.* FROM public.team_rosters AS team_rosters JOIN public.player_roles AS player_roles ON player_roles.player_id = team_rosters.id;"))
@@ -405,11 +454,12 @@ class Data_Analysis():
         print("data analysis init")
         self.df = pd.DataFrame()
         self.dbconnector()
-        self.calculate_player_rank()
-        self.get_player_data()
+        # self.calculate_player_rank()
+        # self.get_player_data()
         # self.role_classification()
-        self.plot_role_classification()
-        self.team_comparison()
-        self.probabilistic_model()
+        # self.plot_role_classification()
+        # self.team_comparison()
+        # self.probabilistic_model()
         # self.test_get_more_teams()
         # self.player_ranked()
+        # self.model_prediction()

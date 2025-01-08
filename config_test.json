@@ -1,6 +1,6 @@
 {
     "API":{
-        "endpoints": ["breakpoint_matches"],
+        "endpoints": ["fandom_past_player_stats"],
         "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcGlpdWZ4Y2NpdWp1Z3pqdmd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NjE3ODg0MDgsImV4cCI6MTk3NzM2NDQwOH0.hwvv0krVgonNDoM7liZoUxKGgyff2BCNGnC0iCZKyJM"
     },
     "breakpoint_players":{
@@ -9,14 +9,7 @@
         "method": "self.breakpoint_players()"
     },
     "breakpoint_matches":{
-        "url": ["https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/39.json",
-                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/40.json",
-                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/41.json",
-                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/42.json",
-                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/43.json",
-                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/44.json",
-                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/45.json",
-                "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/49.json",
+        "url": ["https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/49.json",
                 "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/52.json",
                 "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/53.json",
                 "https://www.breakingpoint.gg/_next/data/LeBfkuuvS-KBZSmWz9cpp/events/54.json"

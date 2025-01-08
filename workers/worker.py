@@ -152,9 +152,9 @@ class CDL_Worker:
         df.columns = df.columns.str.replace(' ', '', regex=True)
         df.columns = df.columns.str.replace('&', '_', regex=True)
         df.iloc[:, 0] = df.iloc[:, 0].str.replace(' ', '')
-
+        
         regex = re.compile(r'\d{4}')
-        year = regex.findall(url)
+        year = regex.findall(self.url)
         print(year)
         df['year'] = year[0]
         
@@ -174,8 +174,7 @@ class CDL_Worker:
             df.columns = df.columns.str.replace('&', '_', regex=True)
             
             col_0 = df.columns[0]
-            df.iloc[:, 0] = df.iloc[:, 0].str.replace('[^A-Za-z0-9]', '', regex=True)
-            
+            df.iloc[:, 0] = df.iloc[:, 0].str.replace("\xa0", " ")
             
             regex = re.compile(r'\d{4}')
             year = regex.findall(url)
@@ -211,7 +210,7 @@ class CDL_Worker:
             
             print(df)
             col_0 = df.columns[0]
-            df.iloc[:, 0] = df.iloc[:, 0].str.replace('[^A-Za-z0-9]', '', regex=True)
+            df.iloc[:, 0] = df.iloc[:, 0].str.replace("\xa0", " ")
             
             regex = re.compile(r'\d{4}')
             year = regex.findall(url)
