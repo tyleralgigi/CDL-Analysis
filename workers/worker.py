@@ -82,7 +82,7 @@ class CDL_Worker:
                     try:
                         self.df = pd.DataFrame(response_df['pageProps'][key]).astype(str)
                         # print(self.df)
-                        self.check_ids() #Comment this line out on first run to not get table not found error
+                        # self.check_ids() #Comment this line out on first run to not get table not found error
                         self.transform()
                         self.loader('append')
                     except Exception as e:

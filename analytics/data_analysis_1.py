@@ -138,7 +138,7 @@ class Data_Analysis_1():
             'control_TM_pm': 'mean',
             # Add more columns as needed
         }).reset_index()
-        self.aggregated_team_averages = pd.merge(self.team_standings[['team_id', 'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %',  'Total_Map_Wins', 'Total_Map_Losses', 'Total_Maps %', 'year']], aggregated_team_averages, on=['team_id', 'year'], how='right')
+        self.aggregated_team_averages = pd.merge(self.team_standings[['id', 'HP +/-', 'HP K/D', 'S&D Win %',  'S&D +/-', 'CTL K/D', 'CTL Win %', 'CTL Round +/-', 'year']], aggregated_team_averages, on=['team_id', 'year'], how='right')
         # print(self.aggregated_team_averages)
         del aggregated_team_averages
         del self.player_merged_df
