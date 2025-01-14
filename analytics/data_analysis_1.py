@@ -11,6 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
 
 class Data_Analysis_1():
     def dbconnector(self):
@@ -199,10 +200,10 @@ class Data_Analysis_1():
         ]
         
         # Initialize the scaler
-        scaler = MinMaxScaler()
+        self.scaler = MinMaxScaler()
 
         # Apply MinMaxScaler to the selected columns
-        self.match_with_teams[columns_to_normalize] = scaler.fit_transform(self.match_with_teams[columns_to_normalize])
+        self.match_with_teams[columns_to_normalize] = self.scaler.fit_transform(self.match_with_teams[columns_to_normalize])
         self.match_with_teams['winner_id'] = (self.match_with_teams['winner_id'] == self.match_with_teams['team_2_id']).astype(int)
         self.match_with_teams['spreadsheet_id'] = self.match_with_teams['spreadsheet_id'].astype('category')
 
@@ -213,6 +214,53 @@ class Data_Analysis_1():
         self.match_with_teams = self.match_with_teams.rename(columns={"spreadsheet_id": "year"})
 
     def train_modal(self):
+        # Define features and target (excluding team scores)
+        X = self.match_with_teams.drop(columns=['team_1_score', 'team_2_score', 'winner_id'])
+        y_winner = self.match_with_teams['winner_id']  # Classification target
+        
+        # Train-test split
+        X_train, X_test, y_winner_train, y_winner_test = train_test_split(
+            X, y_winner, test_size=0.2, random_state=42
+        )
+
+        # Train classifier
+        self.classifier = RandomForestClassifier(random_state=42)
+        self.classifier.fit(X_train, y_winner_train)
+
+        # Predict winner
+        y_winner_pred = self.classifier.predict(X_test)
+
+        # Evaluate classification
+        accuracy = accuracy_score(y_winner_test, y_winner_pred)
+        classification_rep = classification_report(y_winner_test, y_winner_pred)
+        print(f"Classification Accuracy (No Scores): {accuracy}")
+        print(classification_rep)
+
+        # Feature importance analysis
+        classifier_importance = pd.DataFrame({
+            'Feature': X.columns,
+            'Importance': self.classifier.feature_importances_
+        }).sort_values(by='Importance', ascending=False)
+        
+        # Compute correlation matrix by temporarily adding 'winner_id'
+        X_with_target = self.match_with_teams[['winner_id']].join(X)
+        corr_matrix = X_with_target.corr()
+
+        # Print correlation with 'winner_id'
+        print("Correlation with 'winner_id':")
+        print(corr_matrix['winner_id'].sort_values(ascending=False))
+
+        # Plotting classification feature importance
+        # plt.figure(figsize=(10, 6))
+        # classifier_features = classifier_importance.head(10)  # Top 10 features
+        # plt.barh(classifier_features['Feature'], classifier_features['Importance'], align='center', color='orange')
+        # plt.xlabel('Importance')
+        # plt.ylabel('Feature')
+        # plt.title('Top 10 Features for Winner Prediction (No Scores)')
+        # plt.gca().invert_yaxis()
+        # plt.show()
+
+    def train_modal_1(self):
         # Define features and target
         X = self.match_with_teams.drop(columns=['team_1_score', 'team_2_score', 'winner_id'])
         
@@ -226,22 +274,22 @@ class Data_Analysis_1():
         )
         
         # Multi-output regression
-        regressor = MultiOutputRegressor(RandomForestRegressor(random_state=42))
-        regressor.fit(X_train, y_scores_train)
+        self.regressor = MultiOutputRegressor(RandomForestRegressor(random_state=42))
+        self.regressor.fit(X_train, y_scores_train)
 
         # Predict scores
-        y_scores_pred = regressor.predict(X_test)
+        y_scores_pred = self.regressor.predict(X_test)
 
         # Evaluate regression
         mse_team_1 = mean_squared_error(y_scores_test['team_1_score'], y_scores_pred[:, 0])
         mse_team_2 = mean_squared_error(y_scores_test['team_2_score'], y_scores_pred[:, 1])
         
         # Train classifier
-        classifier = RandomForestClassifier(random_state=42)
-        classifier.fit(X_train, y_winner_train)
+        self.classifier = RandomForestClassifier(random_state=42)
+        self.classifier.fit(X_train, y_winner_train)
 
         # Predict winner
-        y_winner_pred = classifier.predict(X_test)
+        y_winner_pred = self.classifier.predict(X_test)
 
         # Evaluate classification
         accuracy = accuracy_score(y_winner_test, y_winner_pred)
@@ -251,16 +299,21 @@ class Data_Analysis_1():
         print(classification_rep)
         
         # Combine feature importance from regressor and classifier
-        # regressor_importance = pd.DataFrame({
-        #     'Feature': X.columns,
-        #     'Importance': regressor.estimators_[0].feature_importances_
-        # }).sort_values(by='Importance', ascending=False)
+        regressor_importance = pd.DataFrame({
+            'Feature': X.columns,
+            'Importance': self.regressor.estimators_[0].feature_importances_
+        }).sort_values(by='Importance', ascending=False)
 
-        # classifier_importance = pd.DataFrame({
-        #     'Feature': X.columns,
-        #     'Importance': classifier.feature_importances_
-        # }).sort_values(by='Importance', ascending=False)
+        classifier_importance = pd.DataFrame({
+            'Feature': X.columns,
+            'Importance': self.classifier.feature_importances_
+        }).sort_values(by='Importance', ascending=False)
 
+        # Correlation matrix for winner_id
+        corr_matrix = self.match_with_teams.corr()
+        print("Correlation with 'winner_id':")
+        print(corr_matrix['winner_id'].sort_values(ascending=False))
+        
         # # Plotting regression feature importance
         # plt.figure(figsize=(10, 6))
         # regressor_features = regressor_importance.head(10)  # Top 10 features
@@ -272,21 +325,171 @@ class Data_Analysis_1():
         # plt.show()
 
         # # Plotting classification feature importance
-        # plt.figure(figsize=(10, 6))
-        # classifier_features = classifier_importance.head(10)  # Top 10 features
-        # plt.barh(classifier_features['Feature'], classifier_features['Importance'], align='center', color='orange')
-        # plt.xlabel('Importance')
-        # plt.ylabel('Features')
-        # plt.title('Top 10 Features for Winner Prediction (Classification)')
-        # plt.gca().invert_yaxis()
-        # plt.show()
+        plt.figure(figsize=(10, 6))
+        classifier_features = classifier_importance.head(10)  # Top 10 features
+        plt.barh(classifier_features['Feature'], classifier_features['Importance'], align='center', color='orange')
+        plt.xlabel('Importance')
+        plt.ylabel('Features')
+        plt.title('Top 10 Features for Winner Prediction (Classification)')
+        plt.gca().invert_yaxis()
+        plt.show()
 
     def prediction(self):
-        pass
+        self.upcoming_games = pd.read_csv("data/upcoming_games.csv", header=0)
+        self.upcoming_games['year'] = '2025'
+        
+        # Map team1_name and team2_name to their respective IDs using the df_teams dataframe
+        team_id_map = dict(zip(self.standing_current['name_short'], self.standing_current['id']))
+
+        self.upcoming_games['team1_id'] = self.upcoming_games['team_1_name'].map(team_id_map)
+        self.upcoming_games['team2_id'] = self.upcoming_games['team_2_name'].map(team_id_map)
+        
+        # Drop the original name columns if no longer needed
+        self.upcoming_games_team1 = self.upcoming_games[['team1_id', 'year']]
+        self.upcoming_games_team2 = self.upcoming_games[['team2_id', 'year']]
+        
+        upcoming_games_team1_stats = pd.merge(self.team_standings[['team_id', 'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %',  'Total_Map_Wins', 'Total_Map_Losses', 'Total_Maps %', 'year']], 
+                                                self.upcoming_games_team1,
+                                                left_on=['team_id', 'year'],
+                                                right_on=['team1_id', 'year'],
+                                                suffixes=('', '_team1'),
+                                                how='right')
+
+        upcoming_games_team2_stats = pd.merge(self.team_standings[['team_id', 'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %',  'Total_Map_Wins', 'Total_Map_Losses', 'Total_Maps %', 'year']], 
+                                                self.upcoming_games_team2,
+                                                left_on=['team_id', 'year'],
+                                                right_on=['team2_id', 'year'],
+                                                suffixes=('', '_team2'),
+                                                how='right')
+        
+        upcoming_games_team_stats = pd.concat([upcoming_games_team1_stats, upcoming_games_team2_stats], axis=1)
+        columns_to_drop = ['team1_id', 'team2_id', 'team_id_team1', 'team_id_team2']
+        upcoming_games_team_stats = upcoming_games_team_stats.drop(columns=columns_to_drop, errors='ignore')
+        
+        match_with_team1 = pd.merge(
+            self.upcoming_games,
+            self.aggregated_team_averages,
+            left_on=['team1_id', 'year'],  # Match team ID and year
+            right_on=['team_id', 'year'],  # Columns in aggregated averages
+            suffixes=('', '_team1'),  # Add suffix for team 1 stats
+            how='left'
+        )
+
+        # Merge Team 2 data
+        match_with_team2 = pd.merge(
+            match_with_team1,
+            self.aggregated_team_averages,
+            left_on=['team2_id', 'year'],  # Match team ID and year
+            right_on=['team_id', 'year'],  # Columns in aggregated averages
+            suffixes=('_team1', '_team2'),  # Add suffix for Team 2
+            how='left'
+        )
+        columns_to_drop = ['team1_id', 'team2_id']
+        match_with_teams = match_with_team2.drop(columns=columns_to_drop, errors='ignore')
+        
+        upcoming_matches_stats = pd.concat([match_with_teams, upcoming_games_team_stats], axis=1)
+        upcoming_matches_stats = upcoming_matches_stats.loc[:, ~upcoming_matches_stats.columns.duplicated(keep='first')]
+        columns_to_drop = ['team_1_name', 'team_2_name', 'Total_Maps %', 'Total_Map_Losses', 'Total_Map_Wins',
+                        'Total_Series', 'Total_Series_Losses', 'Total_Series_Wins', 'Total_Series %', 'team_id']
+        upcoming_matches_stats = upcoming_matches_stats.drop(columns=columns_to_drop, errors='ignore')
+
+        upcoming_matches_stats['search_KD_pm_diff'] = upcoming_matches_stats['search_KD_pm_team1'] - upcoming_matches_stats['search_KD_pm_team2']
+        upcoming_matches_stats['control_KD_pm_diff'] = upcoming_matches_stats['control_KD_pm_team1'] - upcoming_matches_stats['control_KD_pm_team2']
+        
+        relative_metrics = [
+            'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %', 'Total_Map_Wins',
+            'Total_Map_Losses', 'Total_Maps %', 'search_K_pm', 'search_D_pm', 'search_KD_pm',
+            'search_+/-_pm', 'hardpoint_K_pm', 'hardpoint_D_pm', 'hardpoint_KD_pm',
+            'hardpoint_+/-_pm', 'hardpoint_K/M_pm', 'hardpoint_TM_pm', 'control_K_pm',
+            'control_D_pm', 'control_KD_pm', 'control_+/-_pm', 'control_K/M_pm', 'control_TM_pm'
+        ]
+        upcoming_matches_stats = upcoming_matches_stats.apply(pd.to_numeric, errors='coerce')
+
+        # Compute relative metrics
+        for metric in relative_metrics:
+            upcoming_matches_stats[f'{metric}_diff'] = (
+                upcoming_matches_stats[f'{metric}_team1'] - upcoming_matches_stats[f'{metric}_team2']
+            )
+        columns_to_drop = [f'{col}_team1' for col in relative_metrics] + [f'{col}_team2' for col in relative_metrics]
+        upcoming_matches_stats = upcoming_matches_stats.drop(columns=columns_to_drop)
+        
+        # Columns to normalize
+        columns_to_normalize = [
+            'search_KD_pm_diff', 'control_KD_pm_diff', 'Total_Series_Wins_diff',
+            'Total_Series_Losses_diff', 'Total_Series %_diff', 'Total_Map_Wins_diff',
+            'Total_Map_Losses_diff', 'Total_Maps %_diff', 'search_K_pm_diff',
+            'search_D_pm_diff', 'search_+/-_pm_diff', 'hardpoint_K_pm_diff',
+            'hardpoint_D_pm_diff', 'hardpoint_KD_pm_diff', 'hardpoint_+/-_pm_diff',
+            'hardpoint_K/M_pm_diff', 'hardpoint_TM_pm_diff', 'control_K_pm_diff',
+            'control_D_pm_diff', 'control_+/-_pm_diff', 'control_K/M_pm_diff',
+            'control_TM_pm_diff'
+        ]
+        
+        # Apply MinMaxScaler to the selected columns
+        upcoming_matches_stats[columns_to_normalize] = self.scaler.transform(upcoming_matches_stats[columns_to_normalize])
+        upcoming_matches_stats['year'] = upcoming_matches_stats['year'].astype('category')
+
+        upcoming_matches_stats = upcoming_matches_stats.drop(columns=['team_id_team1', 'team_id_team2'])
+        
+        print(upcoming_matches_stats.columns)
+        print(upcoming_matches_stats)
+
+        # Number of simulations
+        n_simulations = 10000
+        
+        simulated_winner_predictions = [] # Placeholder for predictions
+        simulated_team_1_scores = []  # Store Team 1 scores
+        simulated_team_2_scores = []  # Store Team 2 scores
+        
+        # Run predictions 10,000 times
+        for i in range(n_simulations):
+            # Print the current iteration on the same line
+            sys.stdout.write(f"\rSimulation {i + 1}/{n_simulations}")
+            sys.stdout.flush()
     
+            winner_predictions = self.classifier.predict(upcoming_matches_stats)
+            simulated_winner_predictions.append(winner_predictions)
+            
+            # # Predict scores
+            # score_predictions = self.regressor.predict(upcoming_matches_stats)
+            # simulated_team_1_scores.append(score_predictions[:, 0])  # Team 1 scores
+            # simulated_team_2_scores.append(score_predictions[:, 1])  # Team 2 scores
+
+        # Convert predictions to NumPy arrays
+        simulated_winner_predictions = np.array(simulated_winner_predictions)
+        # simulated_team_1_scores = np.array(simulated_team_1_scores)
+        # simulated_team_2_scores = np.array(simulated_team_2_scores)
+
+        # Calculate probabilities for winner predictions
+        team_1_win_prob = (simulated_winner_predictions == 0).mean(axis=0)
+        team_2_win_prob = (simulated_winner_predictions == 1).mean(axis=0)
+
+        # Average scores for each team
+        # team_1_score_avg = simulated_team_1_scores.mean(axis=0)
+        # team_2_score_avg = simulated_team_2_scores.mean(axis=0)
+
+        # Add results to the DataFrame
+        upcoming_matches_stats['team_1_win_prob'] = team_1_win_prob
+        upcoming_matches_stats['team_2_win_prob'] = team_2_win_prob
+        upcoming_matches_stats['winner_pred'] = np.where(team_1_win_prob > team_2_win_prob, 0, 1)
+        # upcoming_matches_stats['team_1_score_pred'] = team_1_score_avg
+        # upcoming_matches_stats['team_2_score_pred'] = team_2_score_avg
+        print("\n")
+        print(upcoming_matches_stats[['team_1_win_prob', 'team_2_win_prob','winner_pred']])
+        # # Predict winners and scores for upcoming games
+        # winner_predictions = self.classifier.predict(upcoming_matches_stats)
+        # score_predictions = self.regressor.predict(upcoming_matches_stats)
+        
+        # # # Add predictions to the DataFrame
+        # upcoming_matches_stats['team_1_score_pred'] = score_predictions[:, 0]
+        # upcoming_matches_stats['team_2_score_pred'] = score_predictions[:, 1]
+        # upcoming_matches_stats['winner_pred'] = winner_predictions
+        # print(upcoming_matches_stats[['team_1_score_pred', 'team_2_score_pred','winner_pred' ]])
+        
     def init(self):
         print("data analysis 1 init")
         self.dbconnector()
         self.load_data()
         self.FeatureEngineering()
         self.train_modal()
+        self.prediction()
