@@ -64,7 +64,7 @@ class CDL_Worker:
                     response = requests.get(self.url+str(f"({id})"), headers=header)
                     self.df = pd.json_normalize(response.json())
                     
-                    self.check_ids()
+                    self.check_ids() #Comment this line out on first run to not get table not found error
                     self.transform()
                     self.loader('append')
 
@@ -82,7 +82,7 @@ class CDL_Worker:
                     try:
                         self.df = pd.DataFrame(response_df['pageProps'][key]).astype(str)
                         # print(self.df)
-                        self.check_ids()
+                        self.check_ids() #Comment this line out on first run to not get table not found error
                         self.transform()
                         self.loader('append')
                     except Exception as e:
