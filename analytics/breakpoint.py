@@ -20,6 +20,10 @@ class Breakpoint():
         self.POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD')
         self.engine = create_engine(f'postgresql://{"postgres"}:{self.POSTGRES_PASSWORD}@localhost:{"5432"}/{"Data"}')
 
+    def add_noise(self,X, noise_level=0.01):
+        noise = np.random.normal(0, noise_level, size=X.shape)
+        return X + noise
+    
     def load_data(self):
         print("Loading data")
         #Reading CSVs
@@ -198,8 +202,224 @@ class Breakpoint():
         self.match_with_teams = self.match_with_teams.drop(columns=columns_to_drop)
         print(self.match_with_teams)
         
+        # Columns to normalize
+        columns_to_normalize = [
+            'Total_Series_Wins_diff',
+            'Total_Series_Losses_diff', 'Total_Series %_diff',
+            'Total_Map_Wins_diff', 'Total_Map_Losses_diff', 'Total_Maps %_diff',
+            'HP +/-_diff', 'HP Win %_diff', 'S&D Win %_diff', 'S&D +/-_diff',
+            'CTL Win %_diff', 'CTL Round +/-_diff', 'SlayerRating_diff',
+            'TES_diff', 'KD_diff', 'NonTradedKills_diff', 'HP_KD_diff',
+            'HP_K10M_diff', 'HP_OBJ10M_diff', 'HP_Eng10M_diff', 'SND_KD_diff',
+            'SND_KPR_diff', 'SND_FB_diff', 'SND_FB_Percent_diff',
+            'SND_OBJ_diff', 'CTL_KD_diff', 'CTL_K10M_diff', 'CTL_DMG10M_diff',
+            'CTL_Eng10M_diff', 'CTL_Zone_Captures_diff'
+        ]
+        
+        # Initialize the scaler
+        self.scaler = MinMaxScaler()
+        
+        # Apply MinMaxScaler to the selected columns
+        self.match_with_teams[columns_to_normalize] = self.scaler.fit_transform(self.match_with_teams[columns_to_normalize])
+        self.match_with_teams['winner_id'] = (self.match_with_teams['winner_id'] == self.match_with_teams['team_2_id']).astype(int)
+        self.match_with_teams['spreadsheet_id'] = self.match_with_teams['spreadsheet_id'].astype('category')
+
+        self.match_with_teams = self.match_with_teams.drop(columns=['team_1_id', 'team_2_id'])
+        
+        print(self.match_with_teams.columns)
+        print(self.match_with_teams)
+        self.match_with_teams = self.match_with_teams.rename(columns={"spreadsheet_id": "year"})
+        
+    def train_modal(self):
+        # Define features and target (excluding team scores)
+        X = self.match_with_teams.drop(columns=['team_1_score', 'team_2_score', 'winner_id'])
+        y_winner = self.match_with_teams['winner_id']  # Classification target
+
+        # Compute correlation matrix by temporarily adding 'winner_id'
+        if 'winner_id' in self.match_with_teams.columns:
+            X_with_target = self.match_with_teams[['winner_id']].join(X)
+        else:
+            raise ValueError("The 'winner_id' column is missing from self.match_with_teams")
+
+        # Compute the correlation matrix
+        corr_matrix = X_with_target.corr()
+
+        # Identify low-correlation features
+        self.low_corr_features = corr_matrix['winner_id'][corr_matrix['winner_id'].abs() < 0.15].index
+        print(f"Features with low correlation (abs < 0.2): {list(self.low_corr_features)}")
+
+        # Drop low-correlation features from X
+        X = X.drop(columns=self.low_corr_features, errors='ignore')
+        print(f"Remaining features after dropping low-correlation ones: {X.columns.tolist()}")
+
+        # Save the training feature set
+        self.training_features = X.columns.tolist()
+        
+        # Train-test split
+        X_train, X_test, y_winner_train, y_winner_test = train_test_split(
+            X, y_winner, test_size=0.2, random_state=42
+        )
+
+        # Train classifier
+        self.classifier = RandomForestClassifier(random_state=42)
+        # Add noise to training features
+        X_train_noisy = self.add_noise(X_train, noise_level=0.125)
+        
+        self.classifier.fit(X_train_noisy, y_winner_train)
+
+        # Predict winner
+        y_winner_pred = self.classifier.predict(X_test)
+
+        # Evaluate classification
+        accuracy = accuracy_score(y_winner_test, y_winner_pred)
+        classification_rep = classification_report(y_winner_test, y_winner_pred)
+        print(f"Classification Accuracy (No Scores): {accuracy}")
+        print(classification_rep)
+
+        # Feature importance analysis
+        classifier_importance = pd.DataFrame({
+            'Feature': X.columns,
+            'Importance': self.classifier.feature_importances_
+        }).sort_values(by='Importance', ascending=False)
+
+        # Print feature importance
+        print("Feature Importance:")
+        print(classifier_importance)
+
+        # Plotting
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Plot feature importance
+        ax.bar(classifier_importance['Feature'], classifier_importance['Importance'], alpha=0.6)
+        ax.set_ylabel('Importance')
+        ax.set_xlabel('Features')
+        ax.set_xticklabels(classifier_importance['Feature'], rotation=45, ha='right')
+
+        plt.title('Feature Importance After Removing Low-Correlation Features')
+        plt.tight_layout()
+        # plt.show()
+
+    def prediction(self):
+        # Load upcoming games and preprocess
+        self.upcoming_games = pd.read_csv("data/upcoming_games.csv", header=0)
+        self.upcoming_games['year'] = '2025'
+        
+        # Map team1_name and team2_name to their respective IDs
+        team_id_map = dict(zip(self.standing_current['name_short'], self.standing_current['id']))
+        self.upcoming_games['team1_id'] = self.upcoming_games['team_1_name'].map(team_id_map)
+        self.upcoming_games['team2_id'] = self.upcoming_games['team_2_name'].map(team_id_map)
+        self.upcoming_games['year'] = self.upcoming_games['year'].astype(int)
+
+        # Prepare stats for upcoming games
+        match_with_team1 = pd.merge(
+            self.upcoming_games,
+            self.aggregated_team_averages,
+            left_on=['team1_id', 'year'],
+            right_on=['team_id', 'year'],
+            suffixes=('', '_team1'),
+            how='left'
+        )
+        match_with_team2 = pd.merge(
+            match_with_team1,
+            self.aggregated_team_averages,
+            left_on=['team2_id', 'year'],
+            right_on=['team_id', 'year'],
+            suffixes=('_team1', '_team2'),
+            how='left'
+        )
+        
+        # Concatenate and clean
+        upcoming_matches_stats = match_with_team2.drop(columns=['team1_id', 'team2_id'], errors='ignore')
+        
+        # Compute relative metrics
+        relative_metrics = [
+            'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %',
+            'Total_Map_Wins', 'Total_Map_Losses', 'Total_Maps %',
+            'HP +/-', 'HP Win %', 'S&D Win %', 'S&D +/-',
+            'CTL Win %', 'CTL Round +/-', 'SlayerRating', 'TES', 'KD',
+            'NonTradedKills', 'HP_KD', 'HP_K10M', 'HP_OBJ10M', 'HP_Eng10M',
+            'SND_KD', 'SND_KPR', 'SND_FB', 'SND_FB_Percent', 'SND_OBJ',
+            'CTL_KD', 'CTL_K10M', 'CTL_DMG10M', 'CTL_Eng10M', 'CTL_Zone_Captures'
+        ]
+        for metric in relative_metrics:
+            upcoming_matches_stats[f'{metric}_diff'] = (
+                upcoming_matches_stats[f'{metric}_team1'] - upcoming_matches_stats[f'{metric}_team2']
+            )
+        columns_to_drop = [f'{col}_team1' for col in relative_metrics] + [f'{col}_team2' for col in relative_metrics]
+        upcoming_matches_stats = upcoming_matches_stats.drop(columns=columns_to_drop, errors='ignore')
+
+        # Normalize columns
+        columns_to_normalize = [
+            'Total_Series_Wins_diff', 'Total_Series_Losses_diff', 'Total_Series %_diff',
+            'Total_Map_Wins_diff', 'Total_Map_Losses_diff', 'Total_Maps %_diff',
+            'HP +/-_diff', 'HP Win %_diff', 'S&D Win %_diff', 'S&D +/-_diff',
+            'CTL Win %_diff', 'CTL Round +/-_diff', 'SlayerRating_diff', 'TES_diff',
+            'KD_diff', 'NonTradedKills_diff', 'HP_KD_diff', 'HP_K10M_diff',
+            'HP_OBJ10M_diff', 'HP_Eng10M_diff', 'SND_KD_diff', 'SND_KPR_diff',
+            'SND_FB_diff', 'SND_FB_Percent_diff', 'SND_OBJ_diff', 'CTL_KD_diff',
+            'CTL_K10M_diff', 'CTL_DMG10M_diff', 'CTL_Eng10M_diff', 'CTL_Zone_Captures_diff'
+        ]
+        upcoming_matches_stats[columns_to_normalize] = self.scaler.transform(upcoming_matches_stats[columns_to_normalize])
+
+        # Align with training features
+        upcoming_matches_stats = upcoming_matches_stats[self.training_features]
+
+        # Predict outcomes
+        # winner_predictions = self.classifier.predict(upcoming_matches_stats)
+        # upcoming_matches_stats['winner_pred'] = winner_predictions
+
+        # print("\nPrediction Results:")
+        # print(upcoming_matches_stats[['winner_pred']])
+        
+        # Number of simulations
+        n_simulations = 10000
+        
+        simulated_winner_predictions = [] # Placeholder for predictions
+        simulated_team_1_scores = []  # Store Team 1 scores
+        simulated_team_2_scores = []  # Store Team 2 scores
+        
+        # Run predictions 10,000 times
+        for i in range(n_simulations):
+            # Print the current iteration on the same line
+            sys.stdout.write(f"\rSimulation {i + 1}/{n_simulations}")
+            sys.stdout.flush()
+
+            # Add small random noise to features
+            noisy_features = upcoming_matches_stats[self.training_features].copy()
+            noise = np.random.normal(0, 0.125, size=noisy_features.shape)  # Adjust scale as needed
+            noisy_features += noise
+
+            # Predict winners
+            winner_predictions = self.classifier.predict(noisy_features)
+            simulated_winner_predictions.append(winner_predictions)
+            
+            # # Predict scores
+            # score_predictions = self.regressor.predict(upcoming_matches_stats)
+            # simulated_team_1_scores.append(score_predictions[:, 0])  # Team 1 scores
+            # simulated_team_2_scores.append(score_predictions[:, 1])  # Team 2 scores
+
+        # Convert predictions to NumPy arrays
+        simulated_winner_predictions = np.array(simulated_winner_predictions)
+        # simulated_team_1_scores = np.array(simulated_team_1_scores)
+        # simulated_team_2_scores = np.array(simulated_team_2_scores)
+
+        # Calculate probabilities for winner predictions
+        team_1_win_prob = (simulated_winner_predictions == 0).mean(axis=0)
+        team_2_win_prob = (simulated_winner_predictions == 1).mean(axis=0)
+        
+        upcoming_matches_stats['team_1_win_prob'] = team_1_win_prob
+        upcoming_matches_stats['team_2_win_prob'] = team_2_win_prob
+        upcoming_matches_stats['winner_pred'] = np.where(team_1_win_prob > team_2_win_prob, 0, 1)
+        # upcoming_matches_stats['team_1_score_pred'] = team_1_score_avg
+        # upcoming_matches_stats['team_2_score_pred'] = team_2_score_avg
+        print("\n")
+        print(upcoming_matches_stats[['team_1_win_prob', 'team_2_win_prob','winner_pred']])
+
+
     def init(self):
         print("dBreakpoint init")
         self.dbconnector()
         self.load_data()
         self.FeatureEngineering()
+        self.train_modal()
+        self.prediction()
