@@ -263,7 +263,7 @@ class Breakpoint():
         # Train classifier
         self.classifier = RandomForestClassifier(random_state=42)
         # Add noise to training features
-        X_train_noisy = self.add_noise(X_train, noise_level=0.125)
+        X_train_noisy = self.add_noise(X_train, noise_level=0.10)
         
         self.classifier.fit(X_train_noisy, y_winner_train)
 
@@ -386,7 +386,7 @@ class Breakpoint():
 
             # Add small random noise to features
             noisy_features = upcoming_matches_stats[self.training_features].copy()
-            noise = np.random.normal(0, 0.125, size=noisy_features.shape)  # Adjust scale as needed
+            noise = np.random.normal(0, 0.10, size=noisy_features.shape)  # Adjust scale as needed
             noisy_features += noise
 
             # Predict winners
