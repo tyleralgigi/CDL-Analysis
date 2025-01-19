@@ -2,16 +2,28 @@ import pandas as pd
 from dotenv import load_dotenv
 import os
 from sqlalchemy import create_engine, text
+from sklearn.ensemble import VotingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+from xgboost import XGBClassifier
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
+
+##TODO
+#
+# Domain-Specific Enhancements
+# Add features like team synergy, player fatigue, or recent streaks to better capture real-world dynamics.
+#
+# Fix Data collection to be automated instead of manual
+#
+#######
 
 class Data_Analysis_1():
     def dbconnector(self):
@@ -435,7 +447,7 @@ class Data_Analysis_1():
         print(upcoming_matches_stats)
 
         # Number of simulations
-        n_simulations = 10000
+        n_simulations = 1
         
         simulated_winner_predictions = [] # Placeholder for predictions
         simulated_team_1_scores = []  # Store Team 1 scores
@@ -486,10 +498,192 @@ class Data_Analysis_1():
         # upcoming_matches_stats['winner_pred'] = winner_predictions
         # print(upcoming_matches_stats[['team_1_score_pred', 'team_2_score_pred','winner_pred' ]])
         
+    def monte_carlo_ensemble_pred(self, n_simulations=1):
+        self.upcoming_games = pd.read_csv("data/upcoming_games.csv", header=0)
+        self.upcoming_games['year'] = '2025'
+        
+        # Map team1_name and team2_name to their respective IDs using the df_teams dataframe
+        team_id_map = dict(zip(self.standing_current['name_short'], self.standing_current['id']))
+
+        self.upcoming_games['team1_id'] = self.upcoming_games['team_1_name'].map(team_id_map)
+        self.upcoming_games['team2_id'] = self.upcoming_games['team_2_name'].map(team_id_map)
+        
+        # Drop the original name columns if no longer needed
+        self.upcoming_games_team1 = self.upcoming_games[['team1_id', 'year']]
+        self.upcoming_games_team2 = self.upcoming_games[['team2_id', 'year']]
+        
+        upcoming_games_team1_stats = pd.merge(self.team_standings[['team_id', 'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %',  'Total_Map_Wins', 'Total_Map_Losses', 'Total_Maps %', 'year']], 
+                                                self.upcoming_games_team1,
+                                                left_on=['team_id', 'year'],
+                                                right_on=['team1_id', 'year'],
+                                                suffixes=('', '_team1'),
+                                                how='right')
+
+        upcoming_games_team2_stats = pd.merge(self.team_standings[['team_id', 'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %',  'Total_Map_Wins', 'Total_Map_Losses', 'Total_Maps %', 'year']], 
+                                                self.upcoming_games_team2,
+                                                left_on=['team_id', 'year'],
+                                                right_on=['team2_id', 'year'],
+                                                suffixes=('', '_team2'),
+                                                how='right')
+        
+        upcoming_games_team_stats = pd.concat([upcoming_games_team1_stats, upcoming_games_team2_stats], axis=1)
+        columns_to_drop = ['team1_id', 'team2_id', 'team_id_team1', 'team_id_team2']
+        upcoming_games_team_stats = upcoming_games_team_stats.drop(columns=columns_to_drop, errors='ignore')
+        
+        match_with_team1 = pd.merge(
+            self.upcoming_games,
+            self.aggregated_team_averages,
+            left_on=['team1_id', 'year'],  # Match team ID and year
+            right_on=['team_id', 'year'],  # Columns in aggregated averages
+            suffixes=('', '_team1'),  # Add suffix for team 1 stats
+            how='left'
+        )
+
+        # Merge Team 2 data
+        match_with_team2 = pd.merge(
+            match_with_team1,
+            self.aggregated_team_averages,
+            left_on=['team2_id', 'year'],  # Match team ID and year
+            right_on=['team_id', 'year'],  # Columns in aggregated averages
+            suffixes=('_team1', '_team2'),  # Add suffix for Team 2
+            how='left'
+        )
+        columns_to_drop = ['team1_id', 'team2_id']
+        match_with_teams = match_with_team2.drop(columns=columns_to_drop, errors='ignore')
+        
+        upcoming_matches_stats = pd.concat([match_with_teams, upcoming_games_team_stats], axis=1)
+        upcoming_matches_stats = upcoming_matches_stats.loc[:, ~upcoming_matches_stats.columns.duplicated(keep='first')]
+        columns_to_drop = ['team_1_name', 'team_2_name', 'Total_Maps %', 'Total_Map_Losses', 'Total_Map_Wins',
+                        'Total_Series', 'Total_Series_Losses', 'Total_Series_Wins', 'Total_Series %', 'team_id']
+        upcoming_matches_stats = upcoming_matches_stats.drop(columns=columns_to_drop, errors='ignore')
+
+        upcoming_matches_stats['search_KD_pm_diff'] = upcoming_matches_stats['search_KD_pm_team1'] - upcoming_matches_stats['search_KD_pm_team2']
+        upcoming_matches_stats['control_KD_pm_diff'] = upcoming_matches_stats['control_KD_pm_team1'] - upcoming_matches_stats['control_KD_pm_team2']
+        
+        relative_metrics = [
+            'Total_Series_Wins', 'Total_Series_Losses', 'Total_Series %', 'Total_Map_Wins',
+            'Total_Map_Losses', 'Total_Maps %', 'search_K_pm', 'search_D_pm', 'search_KD_pm',
+            'search_+/-_pm', 'hardpoint_K_pm', 'hardpoint_D_pm', 'hardpoint_KD_pm',
+            'hardpoint_+/-_pm', 'hardpoint_K/M_pm', 'hardpoint_TM_pm', 'control_K_pm',
+            'control_D_pm', 'control_KD_pm', 'control_+/-_pm', 'control_K/M_pm', 'control_TM_pm'
+        ]
+        upcoming_matches_stats = upcoming_matches_stats.apply(pd.to_numeric, errors='coerce')
+
+        # Compute relative metrics
+        for metric in relative_metrics:
+            upcoming_matches_stats[f'{metric}_diff'] = (
+                upcoming_matches_stats[f'{metric}_team1'] - upcoming_matches_stats[f'{metric}_team2']
+            )
+        columns_to_drop = [f'{col}_team1' for col in relative_metrics] + [f'{col}_team2' for col in relative_metrics]
+        upcoming_matches_stats = upcoming_matches_stats.drop(columns=columns_to_drop)
+        
+        # Columns to normalize
+        columns_to_normalize = [
+            'search_KD_pm_diff', 'control_KD_pm_diff', 'Total_Series_Wins_diff',
+            'Total_Series_Losses_diff', 'Total_Series %_diff', 'Total_Map_Wins_diff',
+            'Total_Map_Losses_diff', 'Total_Maps %_diff', 'search_K_pm_diff',
+            'search_D_pm_diff', 'search_+/-_pm_diff', 'hardpoint_K_pm_diff',
+            'hardpoint_D_pm_diff', 'hardpoint_KD_pm_diff', 'hardpoint_+/-_pm_diff',
+            'hardpoint_K/M_pm_diff', 'hardpoint_TM_pm_diff', 'control_K_pm_diff',
+            'control_D_pm_diff', 'control_+/-_pm_diff', 'control_K/M_pm_diff',
+            'control_TM_pm_diff'
+        ]
+        
+        # Apply MinMaxScaler to the selected columns
+        y = upcoming_matches_stats['winner_id']
+        
+        upcoming_matches_stats[columns_to_normalize] = self.scaler.transform(upcoming_matches_stats[columns_to_normalize])
+        upcoming_matches_stats['year'] = upcoming_matches_stats['year'].astype('category')
+
+        upcoming_matches_stats = upcoming_matches_stats.drop(columns=['team_id_team1', 'team_id_team2'])
+        
+        print(upcoming_matches_stats.columns)
+        print(upcoming_matches_stats)
+        
+        # Prepare data
+        X = upcoming_matches_stats.drop(columns=['winner_id'], errors='ignore')
+
+        # Split data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+
+        # Save the splits for later use
+        self.X_train = X_train
+        self.X_test = X_test
+        self.y_train = y_train
+        self.y_test = y_test
+        
+        # Define individual models
+        rf = RandomForestClassifier(random_state=42)
+        xgb = XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42)
+        lr = LogisticRegression(max_iter=1000, random_state=42)
+
+        # Define hyperparameter grids for each model
+        param_grid = {
+            'rf__n_estimators': [50, 100, 200],
+            'rf__max_depth': [5, 10, None],
+            'xgb__learning_rate': [0.01, 0.1, 0.2],
+            'xgb__n_estimators': [50, 100, 200],
+            'lr__C': [0.01, 0.1, 1, 10]
+        }
+
+        # Define the ensemble model
+        ensemble_model = VotingClassifier(estimators=[
+            ('rf', rf),
+            ('xgb', xgb),
+            ('lr', lr)
+        ], voting='soft')
+
+        # Perform grid search for hyperparameter tuning
+        grid_search = GridSearchCV(estimator=ensemble_model, param_grid=param_grid, cv=3, scoring='accuracy', verbose=2)
+        grid_search.fit(self.X_train, self.y_train)
+
+        # Get the best model
+        best_model = grid_search.best_estimator_
+
+        print(f"Best Parameters: {grid_search.best_params_}")
+
+        # Placeholder for Monte Carlo simulation results
+        simulated_winner_predictions = []
+
+        # Run Monte Carlo simulations
+        for i in range(n_simulations):
+            # Print progress
+            if i % 100 == 0:
+                print(f"Simulation {i}/{n_simulations}")
+            
+            # Add randomness to test features
+            noisy_features = self.X_test.copy()
+            noise = np.random.normal(0, 0.01, size=noisy_features.shape)  # Add small noise
+            noisy_features += noise
+            noisy_features = noisy_features.clip(lower=0, upper=1)  # Ensure valid range for features
+
+            # Predict winners using the ensemble model
+            winner_probs = best_model.predict_proba(noisy_features)
+            winner_predictions = np.argmax(winner_probs, axis=1)  # Convert probabilities to class labels
+            simulated_winner_predictions.append(winner_predictions)
+
+        # Convert to NumPy array
+        simulated_winner_predictions = np.array(simulated_winner_predictions)
+
+        # Calculate win probabilities
+        team_1_win_prob = (simulated_winner_predictions == 0).mean(axis=0)
+        team_2_win_prob = (simulated_winner_predictions == 1).mean(axis=0)
+
+        # Add results to the DataFrame
+        X['team_1_win_prob'] = team_1_win_prob
+        X['team_2_win_prob'] = team_2_win_prob
+        X['winner_pred'] = np.where(team_1_win_prob > team_2_win_prob, 0, 1)
+
+        # Display results
+        print(X[['team_1_win_prob', 'team_2_win_prob', 'winner_pred']])
+        return X
+
     def init(self):
         print("data analysis 1 init")
         self.dbconnector()
         self.load_data()
         self.FeatureEngineering()
         self.train_modal()
-        self.prediction()
+        self.monte_carlo_ensemble_pred()

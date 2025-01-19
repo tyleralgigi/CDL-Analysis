@@ -6,6 +6,7 @@ import pandas as pd
 import requests
 from datetime import datetime
 import re
+import numpy as np
 
 class CDL_Worker:
     def dbconnector(self):
@@ -90,6 +91,38 @@ class CDL_Worker:
                     
         else:
             print(f"Failed to retrieve webpage: {response.status_code}")
+
+    def breakpoint_playerStats(self):
+        #Creating rolling averages for players the past 2 games
+        #get team ids
+        query1 = "select distinct team_id from public.team_rosters"
+        
+        #get match id for past 2 games
+        with self.engine.connect() as conn:
+            result = conn.execute(text(query1)).fetchall()
+            
+            # Using list comprehension
+            team_ids = [item[0] for item in result]
+            
+            team_id = team_ids[0]
+            query2 = f"""
+                SELECT id, team_1_id, team_2_id
+                FROM public.matches_matches
+                WHERE team_1_id::integer = {team_id} OR team_2_id::integer = {team_id}
+                ORDER BY datetime DESC
+                LIMIT 2;
+            """
+            result = conn.execute(text(query2)).fetchall()
+            matches = np.array(result).tolist()
+            
+            common_values = set(matches[0][-2:]).intersection(matches[1][-2:])
+            common_value_int = next(iter(common_values))
+            id1 = matches[0][0]
+            id2 = matches[1][0]
+
+            matches = [[id1, common_value_int], [id2, common_value_int]]
+            print(matches)
+
 
     def check_ids(self):
         # query = f'select * from public."{self.tableName}"'
