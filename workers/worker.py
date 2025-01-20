@@ -97,6 +97,8 @@ class CDL_Worker:
         #get team ids
         query1 = "select distinct team_id from public.team_rosters"
         
+        matchIds = []
+        rolling_team_data = []
         #get match id for past 2 games
         with self.engine.connect() as conn:
             result = conn.execute(text(query1)).fetchall()
@@ -104,24 +106,58 @@ class CDL_Worker:
             # Using list comprehension
             team_ids = [item[0] for item in result]
             
-            team_id = team_ids[0]
-            query2 = f"""
-                SELECT id, team_1_id, team_2_id
-                FROM public.matches_matches
-                WHERE team_1_id::integer = {team_id} OR team_2_id::integer = {team_id}
-                ORDER BY datetime DESC
-                LIMIT 2;
-            """
-            result = conn.execute(text(query2)).fetchall()
-            matches = np.array(result).tolist()
+            for team_id in team_ids:
+                print(team_id)
+                query2 = f"""
+                    SELECT id, team_1_id, team_2_id
+                    FROM public.matches_matches
+                    WHERE team_1_id::integer = {team_id} OR team_2_id::integer = {team_id}
+                    ORDER BY datetime DESC
+                    LIMIT 3;
+                """
+                result = conn.execute(text(query2)).fetchall()
+                matches = np.array(result).tolist()
+                
+                #3 game rolling average
+                matchIds.append(int(matches[0][0]))
+                matchIds.append(int(matches[1][0]))
+                matchIds.append(int(matches[2][0]))
+                
+                response = requests.post(self.url, 
+                                json = {
+                                    "teamId": team_id, 
+                                    "matchId": matchIds
+                                },
+                                headers = {
+                                    "Content-Type": "application/json",
+                                    "Accept": "application/json",
+                                    "apikey": self.apikey,
+                                    "Authorization": "Bearer " + self.apikey
+                                })
+                data = pd.DataFrame(response.json())
+                data_averages = pd.DataFrame()
+                column_names = ['ctl_bp_rating', 'hp_bp_rating', 'snd_bp_rating', 'ctl_game_count', 'hp_game_count', 'snd_game_count']
+                data = data[column_names]
+                
+                data_averages['ctl_bp_rating_avg'] = data['ctl_bp_rating'] / data['ctl_game_count']
+                data_averages['hp_bp_rating_avg'] = data['hp_bp_rating'] / data['hp_game_count']
+                data_averages['snd_bp_rating_avg'] = data['snd_bp_rating'] / data['snd_game_count']
+                
+                data_averages = data_averages[['ctl_bp_rating_avg','hp_bp_rating_avg','snd_bp_rating_avg']].sum()
+                rolling_team_data.append([team_id, float(data_averages['ctl_bp_rating_avg'])/3, 
+                                    float(data_averages['hp_bp_rating_avg'])/3, float(data_averages['snd_bp_rating_avg'])/3])
             
-            common_values = set(matches[0][-2:]).intersection(matches[1][-2:])
-            common_value_int = next(iter(common_values))
-            id1 = matches[0][0]
-            id2 = matches[1][0]
+            rolling_team_data_df = pd.DataFrame(rolling_team_data)
+            rolling_team_data_df = rolling_team_data_df.rename(columns={
+                    0: 'teamId',
+                    1: 'ctl_bp_rating_avg',
+                    2: 'hp_bp_rating_avg',
+                    3: 'snd_bp_rating_avg'
+                })
 
-            matches = [[id1, common_value_int], [id2, common_value_int]]
-            print(matches)
+            self.df = rolling_team_data_df[['ctl_bp_rating_avg','hp_bp_rating_avg','snd_bp_rating_avg']].map(lambda x: np.trunc(x * 1000) / 1000)
+            self.df['teamId'] = rolling_team_data_df['teamId']
+            self.loader("replace")
 
     def check_ids(self):
         # Check if the table exists in the database

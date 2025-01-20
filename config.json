@@ -10,7 +10,7 @@
     },
     "playerStats":{
         "url": ["https://www.breakingpoint.gg/api/playerStats"],
-        "table_name": "playerStats",
+        "table_name": "playerRollingAvg",
         "method": "self.breakpoint_playerStats()"
     },
     "breakpoint_matches":{
