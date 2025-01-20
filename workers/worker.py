@@ -83,7 +83,7 @@ class CDL_Worker:
                     try:
                         self.df = pd.DataFrame(response_df['pageProps'][key]).astype(str)
                         # print(self.df)
-                        # self.check_ids() #Comment this line out on first run to not get table not found error
+                        self.check_ids() #Comment this line out on first run to not get table not found error
                         self.transform()
                         self.loader('append')
                     except Exception as e:
@@ -123,19 +123,33 @@ class CDL_Worker:
             matches = [[id1, common_value_int], [id2, common_value_int]]
             print(matches)
 
-
     def check_ids(self):
-        # query = f'select * from public."{self.tableName}"'
-        # print(query)
-        df = pd.read_sql_table(self.tableName, self.engine)
-        # print(df)
-        if not df.empty:
-            with self.engine.connect() as conn:
+        # Check if the table exists in the database
+        with self.engine.connect() as conn:
+            print(self.tableName)
+            result = conn.execute(
+                text(f"SELECT EXISTS (SELECT table_name FROM information_schema.tables WHERE table_name = '{self.tableName}');")
+            )
+            table_exists = result.scalar()  # Returns True if the table exists, otherwise False
 
-                filtered_db_df = self.df[~self.df['id'].isin(df['id'])]
-                print("compared and len is: " + str(len(self.df)))
-                result = conn.execute(text(f'DELETE FROM public."{self.tableName}" WHERE id = ANY (ARRAY[{', '.join(f"'{id}'" for id in filtered_db_df)}]);'))
-                print(result)
+        if not table_exists:
+            print(f"Table '{self.tableName}' does not exist in the database. All rows in `self.df` are considered new.")
+        else:
+        
+            # Load the existing table from PostgreSQL into a DataFrame
+            db_df = pd.read_sql_table(self.tableName, self.engine)
+
+            # Convert `id` columns to the same type for comparison
+            db_df['id'] = db_df['id'].astype(str)
+            self.df['id'] = self.df['id'].astype(str)
+
+            # Filter rows in `self.df` that are NOT in the database
+            filtered_df = self.df[~self.df['id'].isin(db_df['id'])]
+
+            print(f"Filtered {len(self.df) - len(filtered_df)} duplicate rows. Remaining rows: {len(filtered_df)}")
+
+            # Update `self.df` with the filtered rows
+            self.df = filtered_df
 
     def getRosters(self):
         print("getRosters()")
@@ -272,7 +286,11 @@ class CDL_Worker:
     def loader(self,method):
         print("Loading into DB")
         # Insert the DataFrame into a table
-        self.df.to_sql(self.tableName, self.engine, if_exists=method, index=False)
+        if not self.df.empty:
+            print("adding rows")
+            self.df.to_sql(self.tableName, self.engine, if_exists=method, index=False)
+        else:
+            print("empty df, not adding anything")
 
     def init(self):
         self.dbconnector()
