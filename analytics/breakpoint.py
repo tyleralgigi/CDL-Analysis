@@ -27,9 +27,9 @@ class Breakpoint():
     def load_data(self):
         print("Loading data")
         #Reading CSVs
-        data = pd.read_excel("data/breakpoint_data.xlsx", sheet_name=None)
-        self.breakpoint_players = data["Players"]
-        self.breakpoint_teams = data["Teams"]
+        # data = pd.read_excel("data/breakpoint_data.xlsx", sheet_name=None)
+        # self.breakpoint_players = data["Players"]
+        # self.breakpoint_teams = data["Teams"]
 
         #Getting Data From Postgres Tables
         with self.engine.connect() as conn:
@@ -57,26 +57,36 @@ class Breakpoint():
         self.transform()
 
     def transform(self):
-        merged_df = pd.merge(self.standing_current, self.breakpoint_teams, left_on='name_short', right_on='Team', how='right')
-        self.team_standings = merged_df[~merged_df[['name_short', 'Year']].duplicated(keep='first')]
-        self.team_standings.drop('name_short', axis=1, inplace=True)
-        self.team_standings.reset_index()
+        # merged_df = pd.merge(self.standing_current, self.breakpoint_teams, left_on='name_short', right_on='Team', how='right')
+        # self.team_standings = merged_df[~merged_df[['name_short', 'Year']].duplicated(keep='first')]
+        # self.team_standings.drop('name_short', axis=1, inplace=True)
+        # self.team_standings.reset_index()
         # print(self.team_standings)
         
-        player_merged_df = pd.merge(self.team_standings[['id', 'Team', 'Year']], self.breakpoint_players, on=['Team', 'Year'], how='right')
-        # print(player_merged_df)
+        standing_2025 = self.breakpoint_standings.loc[self.breakpoint_standings['year'] == 2025]
+        standing_2024 = self.breakpoint_standings.loc[self.breakpoint_standings['year'] == 2024]
+        standing_2025 = pd.merge(self.standing_current, standing_2025, left_on='name', right_on='Team', how='right')
+        standing_2024 = pd.merge(self.standing_current, standing_2024, left_on='name_short', right_on='Team', how='right')
+        self.team_standings = pd.concat([standing_2025, standing_2024], axis=0)
+        self.team_standings.drop(['Team','Rank', 'Points'], axis=1, inplace=True)
+        print(self.team_standings)
         
-        self.allPlayers = self.allPlayers.rename(columns={'tag': 'Player'})
-        player_merged_df = pd.merge(player_merged_df, self.allPlayers, on=['Player'], how='left')
-        self.player_merged_df = player_merged_df[~player_merged_df[['Player', 'Year']].duplicated(keep='first')]
-        self.player_merged_df = self.player_merged_df.rename(columns={'id_x': 'team_id', 'id_y': 'id'})
+        # player_merged_df = pd.merge(self.team_standings[['id', 'Team', 'Year']], self.breakpoint_players, on=['Team', 'Year'], how='right')
+        # # print(player_merged_df)
         
-        self.player_merged_df = self.player_merged_df.fillna(0)
+        # self.allPlayers = self.allPlayers.rename(columns={'tag': 'Player'})
+        # player_merged_df = pd.merge(player_merged_df, self.allPlayers, on=['Player'], how='left')
+        # self.player_merged_df = player_merged_df[~player_merged_df[['Player', 'Year']].duplicated(keep='first')]
+        # self.player_merged_df = self.player_merged_df.rename(columns={'id_x': 'team_id', 'id_y': 'id'})
+        
+        # self.player_merged_df = self.player_merged_df.fillna(0)
         # print(self.player_merged_df)
         # print(self.player_merged_df[self.player_merged_df.isnull().any(axis=1)])
         
         
         
+
+        print(standing_2025)
         
     
     def FeatureEngineering(self):

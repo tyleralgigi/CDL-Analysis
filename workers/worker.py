@@ -357,7 +357,7 @@ class CDL_Worker:
                 )
                 table=pd.read_html(StringIO(element.get_attribute("outerHTML")))
                 # print(table[0])
-                table[0]['year'] = '2025'
+                table[0]['year'] = 2025
                 self.df = table[0]
                 self.tableName = self.config["breakpoint_advanced_stats"]['table_name'] + "_" + subset[i]
                 
