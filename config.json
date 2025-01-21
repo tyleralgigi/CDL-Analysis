@@ -1,6 +1,6 @@
 {
     "API":{
-        "endpoints": ["playerStats"],
+        "endpoints": ["breakpoint_advanced_stats"],
         "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcGlpdWZ4Y2NpdWp1Z3pqdmd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NjE3ODg0MDgsImV4cCI6MTk3NzM2NDQwOH0.hwvv0krVgonNDoM7liZoUxKGgyff2BCNGnC0iCZKyJM"
     },
     "breakpoint_players":{
@@ -14,18 +14,18 @@
         "method": "self.breakpoint_playerStats()"
     },
     "breakpoint_matches":{
-        "url": ["https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/39.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/40.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/41.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/42.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/43.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/44.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/45.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/49.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/52.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/53.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/54.json",
-                "https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/events/55.json"
+        "url": ["https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/39.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/40.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/41.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/42.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/43.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/44.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/45.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/49.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/52.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/53.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/54.json",
+                "https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/events/55.json"
             ],
         "table_name": "matches",
         "method": "self.breakpoint_matches()"
@@ -38,7 +38,7 @@
         "method": "self.playerStatsDetials()"
     },
     "CDL_rosters":{
-        "url": ["https://www.breakingpoint.gg/_next/data/8dQbPzKDw9Uu-3IU7qBQz/teams/"],
+        "url": ["https://www.breakingpoint.gg/_next/data/9Y-dLA5eO5YNfTEIUtSn1/teams/"],
         "table_name": "team_rosters",
         "method": "self.getRosters()"
     },
@@ -65,6 +65,14 @@
         "table_name": "fandom_past_player_stats",
         "year": ["2024", "2023"],
         "method": "self.fandom_past_player_stats()"
+    },
+    "breakpoint_advanced_stats":{
+        "url":[["https://www.breakingpoint.gg/stats/advanced",
+                "https://www.breakingpoint.gg/stats/teams/advanced",
+                "https://www.breakingpoint.gg/cdl"]],
+        "table_name": "breakpoint_advanced_stats",
+        "subset": ["players", "teams", "standings"],
+        "method": "self.breakpoint_advanced_stats()"
     }
 }
 

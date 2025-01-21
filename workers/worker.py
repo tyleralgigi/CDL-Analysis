@@ -7,6 +7,13 @@ import requests
 from datetime import datetime
 import re
 import numpy as np
+from io import StringIO
+
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 
 class CDL_Worker:
     def dbconnector(self):
@@ -313,6 +320,57 @@ class CDL_Worker:
             # df = df[df['id'].notna()]
             
         self.loader("replace")
+
+    def breakpoint_advanced_stats(self):
+        
+        # Configure WebDriver options
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        subset = self.config["breakpoint_advanced_stats"]['subset']
+        
+        # Initialize WebDriver without Service
+        driver = webdriver.Chrome(options=chrome_options)
+        for i in range(len(self.url)):
+            if i == 0:
+                years = ['2025', "2024"]
+                self.df = pd.DataFrame()
+                for year in years:
+                    url = self.url[i] + "?timePeriod=" + year
+                    driver.get(url)
+                    element = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "mantine-datatable-table"))
+                    )
+                    table=pd.read_html(StringIO(element.get_attribute("outerHTML")))
+                    table[0]['year'] = year
+                    self.df = pd.concat([self.df, table[0]], axis=0)
+                    
+                self.tableName = self.config["breakpoint_advanced_stats"]['table_name'] + "_" + subset[i]
+                print(self.tableName)
+            else:
+                url = self.url[i]
+                driver.get(url)
+                
+                element = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "mantine-datatable-table"))
+                )
+                table=pd.read_html(StringIO(element.get_attribute("outerHTML")))
+                # print(table[0])
+                table[0]['year'] = '2025'
+                self.df = table[0]
+                self.tableName = self.config["breakpoint_advanced_stats"]['table_name'] + "_" + subset[i]
+                
+                if i == 1:
+                    #2024 data has missing teams on breakingpoint site, adding from static CSV file
+                    team_2024 = pd.read_csv('data/breakpoint_data_teams.csv')  
+                    self.df = pd.concat([self.df, team_2024], axis=0)
+                else:
+                    standings_2024 = pd.read_csv('data/breakpoint_data_standings.csv')  
+                    self.df = pd.concat([self.df, standings_2024], axis=0)
+                
+                print(self.tableName)
+            self.loader("replace")
 
     def transform(self):
         print("Transforming - Adding rundate")

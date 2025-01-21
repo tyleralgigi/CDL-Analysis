@@ -46,6 +46,14 @@ class Breakpoint():
             result = conn.execute(text(f'select id, tag from public."matches_allPlayers"'))
             self.allPlayers = pd.DataFrame(result.fetchall())
             
+            result = conn.execute(text(f'select * from public.breakpoint_advanced_stats_standings'))
+            self.breakpoint_standings = pd.DataFrame(result.fetchall())
+            
+            result = conn.execute(text(f'select * from public.breakpoint_advanced_stats_teams'))
+            self.breakpoint_teams = pd.DataFrame(result.fetchall())
+            
+            result = conn.execute(text(f'select * from public.breakpoint_advanced_stats_players'))
+            self.breakpoint_players = pd.DataFrame(result.fetchall())
         self.transform()
 
     def transform(self):
@@ -66,6 +74,10 @@ class Breakpoint():
         self.player_merged_df = self.player_merged_df.fillna(0)
         # print(self.player_merged_df)
         # print(self.player_merged_df[self.player_merged_df.isnull().any(axis=1)])
+        
+        
+        
+        
     
     def FeatureEngineering(self):
         #Calculate averages or rates 
@@ -420,6 +432,6 @@ class Breakpoint():
         print("dBreakpoint init")
         self.dbconnector()
         self.load_data()
-        self.FeatureEngineering()
-        self.train_modal()
-        self.prediction()
+        # self.FeatureEngineering()
+        # self.train_modal()
+        # self.prediction()
