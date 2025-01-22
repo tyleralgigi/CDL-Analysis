@@ -12,6 +12,7 @@ from sklearn.metrics import accuracy_score, classification_report
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
+import requests
 
 class Breakpoint():
     def dbconnector(self):
@@ -30,7 +31,11 @@ class Breakpoint():
         # data = pd.read_excel("data/breakpoint_data.xlsx", sheet_name=None)
         # self.breakpoint_players = data["Players"]
         # self.breakpoint_teams = data["Teams"]
-
+        advanced_json = requests.get('https://www.breakingpoint.gg/_next/data/ZHyIJrfATvHbU3RILmkja/stats/advanced.json')
+        advanced_json_data = advanced_json.json()
+        self.advanced_all_players = pd.DataFrame(advanced_json_data['pageProps']['allPlayers'])
+        # print(self.advanced_all_players[['tag','current_team_id']])
+        
         #Getting Data From Postgres Tables
         with self.engine.connect() as conn:
             result = conn.execute(text(f'select * from public."playerStatsDetails"'))
@@ -46,6 +51,9 @@ class Breakpoint():
             result = conn.execute(text(f'select id, tag from public."matches_allPlayers"'))
             self.allPlayers = pd.DataFrame(result.fetchall())
             
+            result = conn.execute(text(f'select tag, team_id from public.team_rosters'))
+            self.team_rsoters = pd.DataFrame(result.fetchall())
+            
             result = conn.execute(text(f'select * from public.breakpoint_advanced_stats_standings'))
             self.breakpoint_standings = pd.DataFrame(result.fetchall())
             
@@ -54,6 +62,13 @@ class Breakpoint():
             
             result = conn.execute(text(f'select * from public.breakpoint_advanced_stats_players'))
             self.breakpoint_players = pd.DataFrame(result.fetchall())
+            
+            result = conn.execute(text(f'select * from public."playerRollingAvg"'))
+            self.rolling_averages = pd.DataFrame(result.fetchall())
+            
+            result = conn.execute(text(f'select id, name_short from public.matches_teams'))
+            self.all_teams = pd.DataFrame(result.fetchall())
+            self.all_teams.rename(columns={'id': 'team_id'}, inplace=True)
         self.transform()
 
     def transform(self):
@@ -63,16 +78,49 @@ class Breakpoint():
         # self.team_standings.reset_index()
         # print(self.team_standings)
         
+        #Merging Breakpoint Advancded Team Stats and Team Standings
         standing_2025 = self.breakpoint_standings.loc[self.breakpoint_standings['year'] == 2025]
         standing_2024 = self.breakpoint_standings.loc[self.breakpoint_standings['year'] == 2024]
         standing_2025 = pd.merge(self.standing_current, standing_2025, left_on='name', right_on='Team', how='right')
         standing_2024 = pd.merge(self.standing_current, standing_2024, left_on='name_short', right_on='Team', how='right')
         self.team_standings = pd.concat([standing_2025, standing_2024], axis=0)
         self.team_standings.drop(['Team','Rank', 'Points'], axis=1, inplace=True)
-        print(self.team_standings)
+        self.team_standings[['MW%','GW%']] = self.team_standings[['MW%','GW%']].apply(lambda col: col.str.replace('%', ''))
+        self.team_standings[['MW%','GW%']] = self.team_standings[['MW%','GW%']].astype(float)
+        self.team_standings[['MW%','GW%']] = self.team_standings[['MW%','GW%']].apply(lambda x: x / 100)
+        del standing_2025
+        del standing_2024
+        del self.breakpoint_standings
         
+        #Merge Players with Current Teams and Team Standings
+        players_2025 = pd.merge(self.team_rsoters, self.breakpoint_players.loc[self.breakpoint_players['year'] == 2025], left_on='tag', right_on='Player', how='right')
+        missing_players = players_2025[players_2025['team_id'].isna()]
+        missing_players = pd.merge(missing_players, self.advanced_all_players[['tag','current_team_id']], left_on='Player', right_on='tag', how='left')
+        missing_players.drop(['team_id','tag_x','tag_y'], axis=1, inplace=True)
+        missing_players.rename(columns={'current_team_id': 'team_id'}, inplace=True)
+        missing_players = missing_players[missing_players['team_id'].notna()]
+        players_2025 = players_2025[players_2025['team_id'].notna()]
+        players_2025 = pd.concat([players_2025, missing_players], axis=0)
+        
+        players_2024 = pd.merge(self.all_teams, self.breakpoint_players.loc[self.breakpoint_players['year'] == 2024], left_on='name_short', right_on='Team', how='right')
+        self.players = pd.concat([players_2025, players_2024], axis=0)
+        self.players.drop(['tag','Team', 'name_short'], axis=1, inplace=True)
+        # print(self.players)
+        del self.breakpoint_players
+        del missing_players
+        del players_2025
+        del players_2024
+        
+        #Adding rolling averages to players_2025
+        rolling_averages_2025 = pd.merge(self.rolling_averages, self.players.loc[self.players['year'] == 2025], left_on='teamId', right_on='team_id', how='right')
+        self.players = pd.concat([rolling_averages_2025, self.players.loc[self.players['year'] == 2024]], axis=0)
+        self.players.drop(['teamId'], axis=1, inplace=True)
+        print(self.players.columns)
+        print(self.team_standings.columns)
+        del rolling_averages_2025
+        del self.rolling_averages
         # player_merged_df = pd.merge(self.team_standings[['id', 'Team', 'Year']], self.breakpoint_players, on=['Team', 'Year'], how='right')
-        # # print(player_merged_df)
+        # print(player_merged_df)
         
         # self.allPlayers = self.allPlayers.rename(columns={'tag': 'Player'})
         # player_merged_df = pd.merge(player_merged_df, self.allPlayers, on=['Player'], how='left')
@@ -82,12 +130,6 @@ class Breakpoint():
         # self.player_merged_df = self.player_merged_df.fillna(0)
         # print(self.player_merged_df)
         # print(self.player_merged_df[self.player_merged_df.isnull().any(axis=1)])
-        
-        
-        
-
-        print(standing_2025)
-        
     
     def FeatureEngineering(self):
         #Calculate averages or rates 

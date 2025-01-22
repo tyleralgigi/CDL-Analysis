@@ -333,43 +333,31 @@ class CDL_Worker:
         # Initialize WebDriver without Service
         driver = webdriver.Chrome(options=chrome_options)
         for i in range(len(self.url)):
+            url = self.url[i]
+            driver.get(url)
+            
+            element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "mantine-datatable-table"))
+            )
+            table=pd.read_html(StringIO(element.get_attribute("outerHTML")))
+            # print(table[0])
+            table[0]['year'] = 2025
+            self.df = table[0]
+            self.tableName = self.config["breakpoint_advanced_stats"]['table_name'] + "_" + subset[i]
+            
+            #2024 data has missing teams on breakingpoint site, adding from static CSV file
             if i == 0:
-                years = ['2025', "2024"]
-                self.df = pd.DataFrame()
-                for year in years:
-                    url = self.url[i] + "?timePeriod=" + year
-                    driver.get(url)
-                    element = WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.CLASS_NAME, "mantine-datatable-table"))
-                    )
-                    table=pd.read_html(StringIO(element.get_attribute("outerHTML")))
-                    table[0]['year'] = year
-                    self.df = pd.concat([self.df, table[0]], axis=0)
-                    
-                self.tableName = self.config["breakpoint_advanced_stats"]['table_name'] + "_" + subset[i]
-                print(self.tableName)
+                players_2024 = pd.read_csv('data/breakpoint_data_players.csv')  
+                self.df = pd.concat([self.df, players_2024], axis=0)
+                self.df.drop(columns=['#'], inplace=True)
+            elif i == 1:
+                team_2024 = pd.read_csv('data/breakpoint_data_teams.csv')  
+                self.df = pd.concat([self.df, team_2024], axis=0)
             else:
-                url = self.url[i]
-                driver.get(url)
-                
-                element = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "mantine-datatable-table"))
-                )
-                table=pd.read_html(StringIO(element.get_attribute("outerHTML")))
-                # print(table[0])
-                table[0]['year'] = 2025
-                self.df = table[0]
-                self.tableName = self.config["breakpoint_advanced_stats"]['table_name'] + "_" + subset[i]
-                
-                if i == 1:
-                    #2024 data has missing teams on breakingpoint site, adding from static CSV file
-                    team_2024 = pd.read_csv('data/breakpoint_data_teams.csv')  
-                    self.df = pd.concat([self.df, team_2024], axis=0)
-                else:
-                    standings_2024 = pd.read_csv('data/breakpoint_data_standings.csv')  
-                    self.df = pd.concat([self.df, standings_2024], axis=0)
-                
-                print(self.tableName)
+                standings_2024 = pd.read_csv('data/breakpoint_data_standings.csv')  
+                self.df = pd.concat([self.df, standings_2024], axis=0)
+            
+            print(self.tableName)
             self.loader("replace")
 
     def transform(self):
