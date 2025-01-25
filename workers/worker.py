@@ -8,7 +8,7 @@ from datetime import datetime
 import re
 import numpy as np
 from io import StringIO
-
+from time import sleep
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -78,26 +78,35 @@ class CDL_Worker:
 
     def breakpoint_matches(self):
         print("Running breakpoint_matches")
+        self.df = pd.DataFrame()
         response = requests.get(self.url)
         if response.status_code == 200:
+            print(response.status_code )
             response_df = response.json()
             # Get the keys
             keys = response_df['pageProps'].keys()
             base_table_name = self.tableName
             for key in keys:
-                if key not in ['initialColorScheme', 'eventPlacements', 'mainEventId']:
+                if key not in ['initialColorScheme', 'eventPlacements', 'mainEventId', 'event']:
                     self.tableName = base_table_name + "_" + key
                     try:
-                        self.df = pd.DataFrame(response_df['pageProps'][key]).astype(str)
-                        # print(self.df)
-                        self.check_ids() #Comment this line out on first run to not get table not found error
+                        query = f'select * from public."{self.tableName}"'
+                        with self.engine.connect() as conn:
+                            print(f"running {query}")
+                            result = conn.execute(text(query))
+                            self.df = pd.concat([pd.DataFrame(result.fetchall()), pd.DataFrame(response_df['pageProps'][key]).astype(str)], ignore_index=True, axis=0)
+                            self.df = self.df.drop_duplicates(subset=['id'], keep='last')
                         self.transform()
-                        self.loader('append')
+                        # print(self.df.size)
+                        self.loader('replace')
                     except Exception as e:
                         print("Unable to make data frame for " + key + " : "+ str(e))
-                    
+
+            # self.check_ids() #Comment this line out on first run to not get table not found error
         else:
             print(f"Failed to retrieve webpage: {response.status_code}")
+                
+        
 
     def breakpoint_playerStats(self):
         #Creating rolling averages for players the past 2 games
@@ -144,6 +153,7 @@ class CDL_Worker:
                 data = pd.DataFrame(response.json())
                 data_averages = pd.DataFrame()
                 column_names = ['ctl_bp_rating', 'hp_bp_rating', 'snd_bp_rating', 'ctl_game_count', 'hp_game_count', 'snd_game_count']
+                print(data)
                 data = data[column_names]
                 
                 data_averages['ctl_bp_rating_avg'] = data['ctl_bp_rating'] / data['ctl_game_count']
@@ -178,21 +188,17 @@ class CDL_Worker:
         if not table_exists:
             print(f"Table '{self.tableName}' does not exist in the database. All rows in `self.df` are considered new.")
         else:
-        
-            # Load the existing table from PostgreSQL into a DataFrame
-            db_df = pd.read_sql_table(self.tableName, self.engine)
-
-            # Convert `id` columns to the same type for comparison
-            db_df['id'] = db_df['id'].astype(str)
-            self.df['id'] = self.df['id'].astype(str)
-
-            # Filter rows in `self.df` that are NOT in the database
-            filtered_df = self.df[~self.df['id'].isin(db_df['id'])]
-
-            print(f"Filtered {len(self.df) - len(filtered_df)} duplicate rows. Remaining rows: {len(filtered_df)}")
-
-            # Update `self.df` with the filtered rows
-            self.df = filtered_df
+            
+            with self.engine.connect() as conn:
+                # Load the existing table from PostgreSQL into a DataFrame
+                db_df = pd.read_sql_table(self.tableName, self.engine)
+                
+                new_ids = self.df['id'].values.tolist()
+                for id in new_ids:
+                    if id in db_df['id'].values.tolist():
+                            # Delete the row if it's not identical
+                            delete_query = text(f'DELETE FROM public."{self.tableName}" WHERE id = :id')
+                            conn.execute(delete_query, {"id": id})
 
     def getRosters(self):
         print("getRosters()")
@@ -368,9 +374,11 @@ class CDL_Worker:
     def loader(self,method):
         print("Loading into DB")
         # Insert the DataFrame into a table
+        print(self.df)
         if not self.df.empty:
             print("adding rows")
             self.df.to_sql(self.tableName, self.engine, if_exists=method, index=False)
+            print("here")
         else:
             print("empty df, not adding anything")
 
