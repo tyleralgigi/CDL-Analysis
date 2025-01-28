@@ -17,6 +17,8 @@ import numpy as np
 import sys
 import requests
 from lightgbm import LGBMClassifier, early_stopping, log_evaluation
+from seleniumwire import webdriver as webdriverwire
+from time import sleep
 
 class Breakpoint():
     def dbconnector(self):
@@ -29,13 +31,47 @@ class Breakpoint():
         noise = np.random.normal(0, noise_level, size=X.shape)
         return X + noise
     
+    def getUrlHash(self):
+        self.urlHash = None
+        # Configure Selenium WebDriver
+        options = webdriverwire.ChromeOptions()
+        options.add_argument("--headless")  # Run in headless mode
+        options.add_argument("--disable-gpu")  # Disable GPU (for older systems)
+        options.add_argument("--no-sandbox")  # Bypass OS security model
+        options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
+        driver = webdriverwire.Chrome(options=options)
+
+        # Navigate to the website
+        driver.get("https://www.breakingpoint.gg/stats/teams/advanced")
+
+        print("sleepy time")
+        sleep(5)
+
+        # Find the hash in network requests
+        for request in driver.requests:
+            if "_next/data" in request.url:
+                print(request.url)
+                self.urlHash = request.url.split("/_next/data/")[1].split("/")[0]
+                print(self.urlHash)
+                # Extract the hash between "data/" and "/matches.json"
+                # hash_value = request.url.split("/_next/data/")[1].split("/matches.json")[0]
+                break
+
+        if self.urlHash:
+            print(f"Hash Value: {self.urlHash}")
+        else:
+            print("Hash not found in network requests.")
+
+        # Quit the driver
+        driver.quit()
+    
     def load_data(self):
         print("Loading data")
         #Reading CSVs
         # data = pd.read_excel("data/breakpoint_data.xlsx", sheet_name=None)
         # self.breakpoint_players = data["Players"]
         # self.breakpoint_teams = data["Teams"]
-        advanced_json = requests.get('https://www.breakingpoint.gg/_next/data/93XP0w20UMsR0XR20IgVN/stats/advanced.json')
+        advanced_json = requests.get(f'https://www.breakingpoint.gg/_next/data/{self.urlHash}/stats/advanced.json')
         advanced_json_data = advanced_json.json()
         self.advanced_all_players = pd.DataFrame(advanced_json_data['pageProps']['allPlayers'])
         self.advanced_all_teams = pd.DataFrame(advanced_json_data['pageProps']['allTeams'])
@@ -57,8 +93,9 @@ class Breakpoint():
             result = conn.execute(text(f'select id, tag from public."matches_allPlayers"'))
             self.allPlayers = pd.DataFrame(result.fetchall())
             
-            result = conn.execute(text(f'select tag, team_id from public.team_rosters'))
+            result = conn.execute(text(f'select * from public.current_rosters where current_team_id IS NOT NULL ORDER BY current_team_id ASC'))
             self.team_rsoters = pd.DataFrame(result.fetchall())
+            self.team_rsoters.rename(columns={'current_team_id': 'team_id'}, inplace=True)
             
             result = conn.execute(text(f'select * from public.breakpoint_advanced_stats_standings'))
             self.breakpoint_standings = pd.DataFrame(result.fetchall())
@@ -86,61 +123,76 @@ class Breakpoint():
         
         #Merging Breakpoint Advancded Team Stats and Team Standings
         standing_2025 = self.breakpoint_standings.loc[self.breakpoint_standings['year'] == 2025]
-        standing_2024 = self.breakpoint_standings.loc[self.breakpoint_standings['year'] == 2024]
+        # standing_2024 = self.breakpoint_standings.loc[self.breakpoint_standings['year'] == 2024]
         standing_2025 = pd.merge(self.standing_current, standing_2025, left_on='name', right_on='Team', how='right')
-        standing_2024 = pd.merge(self.standing_current, standing_2024, left_on='name_short', right_on='Team', how='right')
-        self.team_standings = pd.concat([standing_2025, standing_2024], axis=0)
+        # standing_2024 = pd.merge(self.standing_current, standing_2024, left_on='name_short', right_on='Team', how='right')
+        # self.team_standings = pd.concat([standing_2025, standing_2024], axis=0)
+        self.team_standings = standing_2025
         self.team_standings.drop(['Team','Rank', 'Points', 'Team'], axis=1, inplace=True)
         del standing_2025
-        del standing_2024
+        # del standing_2024
         del self.breakpoint_standings
         
         # self.team_standings.drop(['#'], axis=1, inplace=True)
         teams_2025 = self.breakpoint_teams.loc[self.breakpoint_teams['year'] == 2025]
-        teams_2024 = self.breakpoint_teams.loc[self.breakpoint_teams['year'] == 2024]
+        # teams_2024 = self.breakpoint_teams.loc[self.breakpoint_teams['year'] == 2024]
         teams_2025 = pd.merge(self.advanced_all_teams[['name_short', 'team_id']], teams_2025, left_on='name_short', right_on='Team', how='right')
-        self.breakpoint_teams = pd.concat([teams_2025, teams_2024], axis=0)
-        self.breakpoint_teams['team_id'] = self.breakpoint_teams['team_id'].fillna( self.breakpoint_teams['team_id_x'])
-        self.breakpoint_teams.drop(['name_short', 'team_id_x', 'team_id_y', '#'], axis=1, inplace=True)
+        # self.breakpoint_teams = pd.concat([teams_2025, teams_2024], axis=0)
+        # print(teams_2025)
+        # print(teams_2025.columns)
+        
+        
+        # self.breakpoint_teams['team_id'] = self.breakpoint_teams['team_id'].fillna( self.breakpoint_teams['team_id_x'])
+        teams_2025.rename(columns={'team_id_x': 'team_id'}, inplace=True)
+        teams_2025.drop(['name_short', 'team_id_y', '#'], axis=1, inplace=True)
         self.team_standings['id'] = self.team_standings['id'].astype(int)
-        self.team_standings = pd.merge(self.team_standings, self.breakpoint_teams, left_on='id', right_on='team_id', how='right')
+        self.team_standings = pd.merge(self.team_standings, teams_2025, left_on='id', right_on='team_id', how='right')
         # self.team_standings = pd.concat([standing_2025, self.breakpoint_teams], axis=0)
         self.team_standings[['MW%','GW%','HP Win %','S&D Win %','CTL Win %']] = self.team_standings[['MW%','GW%','HP Win %','S&D Win %','CTL Win %']].apply(lambda col: col.str.replace('%', ''))
         self.team_standings[['MW%','GW%','HP Win %','S&D Win %','CTL Win %']] = self.team_standings[['MW%','GW%','HP Win %','S&D Win %','CTL Win %']].astype(float)
         self.team_standings[['MW%','GW%','HP Win %','S&D Win %','CTL Win %']] = self.team_standings[['MW%','GW%','HP Win %','S&D Win %','CTL Win %']].apply(lambda x: x / 100)
+        
+        print(self.team_standings.columns)
         self.team_standings.drop(['name_short','name','id', 'year_x'], axis=1, inplace=True)
         self.team_standings.rename(columns={'year_y': 'year'}, inplace=True)
-        del teams_2024
+        # del teams_2024
         del teams_2025
         del self.breakpoint_teams
         
         #Merge Players with Current Teams and Team Standings
         players_2025 = pd.merge(self.team_rsoters, self.breakpoint_players.loc[self.breakpoint_players['year'] == 2025], left_on='tag', right_on='Player', how='right')
+        # print(players_2025)
+        
         missing_players = players_2025[players_2025['team_id'].isna()]
         missing_players = pd.merge(missing_players, self.advanced_all_players[['tag','current_team_id']], left_on='Player', right_on='tag', how='left')
         missing_players.drop(['team_id','tag_x','tag_y'], axis=1, inplace=True)
         missing_players.rename(columns={'current_team_id': 'team_id'}, inplace=True)
         missing_players = missing_players[missing_players['team_id'].notna()]
         players_2025 = players_2025[players_2025['team_id'].notna()]
-        players_2025 = pd.concat([players_2025, missing_players], axis=0)
+        self.players = pd.concat([players_2025, missing_players], axis=0)
+        # players_2025 = pd.concat([players_2025, missing_players], axis=0)
         
-        players_2024 = pd.merge(self.all_teams, self.breakpoint_players.loc[self.breakpoint_players['year'] == 2024], left_on='name_short', right_on='Team', how='right')
-        self.players = pd.concat([players_2025, players_2024], axis=0)
-        self.players.drop(['tag','Team', 'name_short'], axis=1, inplace=True)
-        # print(self.players)
+        # players_2024 = pd.merge(self.all_teams, self.breakpoint_players.loc[self.breakpoint_players['year'] == 2024], left_on='name_short', right_on='Team', how='right')
+        # self.players = pd.concat([players_2025, players_2024], axis=0)
+        self.players = self.players[self.players['team_id'].notna()]
+        self.players = self.players[self.players['id'].notna()]
+        self.players.drop(['tag', 'Player','Team','Game Time (Min)'], axis=1, inplace=True)
+        
+        print(self.players)
+        print(self.players.columns)
         del self.breakpoint_players
         del missing_players
         del players_2025
-        del players_2024
+        # del players_2024
         
         #Adding rolling averages to players_2025
-        rolling_averages_2025 = pd.merge(self.rolling_averages, self.players.loc[self.players['year'] == 2025], left_on='teamId', right_on='team_id', how='right')
-        self.players = pd.concat([rolling_averages_2025, self.players.loc[self.players['year'] == 2024]], axis=0)
-        self.players.drop(['teamId'], axis=1, inplace=True)
-        print(self.players.columns)
-        print(self.team_standings.columns)
-        del rolling_averages_2025
-        del self.rolling_averages
+        # rolling_averages_2025 = pd.merge(self.rolling_averages, self.players.loc[self.players['year'] == 2025], left_on='teamId', right_on='team_id', how='right')
+        # self.players = pd.concat([rolling_averages_2025, self.players.loc[self.players['year'] == 2024]], axis=0)
+        # self.players.drop(['teamId'], axis=1, inplace=True)
+        # print(self.players.columns)
+        # print(self.team_standings.columns)
+        # del rolling_averages_2025
+        # del self.rolling_averages
         # player_merged_df = pd.merge(self.team_standings[['id', 'Team', 'Year']], self.breakpoint_players, on=['Team', 'Year'], how='right')
         # print(player_merged_df)
         
@@ -154,14 +206,10 @@ class Breakpoint():
         # print(self.player_merged_df[self.player_merged_df.isnull().any(axis=1)])
     
     def FeatureEng(self):
-        print()
-        self.players.drop(['Player', 'Game Time (Min)'], axis=1, inplace=True)
+        # self.players.drop(['Player', 'Game Time (Min)'], axis=1, inplace=True)
         aggregated_players = pd.DataFrame()
         
-        convert_dict = {'ctl_bp_rating_avg': float,
-                        'hp_bp_rating_avg': float,
-                        'snd_bp_rating_avg': float,
-                        'BP Rating': float,
+        convert_dict = {'BP Rating': float,
                         'Slayer Rating': float,
                         'T.E.S': float,
                         'HP KD': float,
@@ -189,7 +237,8 @@ class Breakpoint():
         
         self.players = self.players.astype(convert_dict)
         
-        aggregated_players[['team_id', 'year', 'SlayerRating', 'TES', 'hp_bp_rating_avg', 'ctl_bp_rating_avg', 'snd_bp_rating_avg']] = self.players[['team_id', 'year', 'Slayer Rating', 'T.E.S', 'hp_bp_rating_avg', 'ctl_bp_rating_avg', 'snd_bp_rating_avg']]
+        # aggregated_players[['team_id', 'year', 'SlayerRating', 'TES', 'hp_bp_rating_avg', 'ctl_bp_rating_avg', 'snd_bp_rating_avg']] = self.players[['team_id', 'year', 'Slayer Rating', 'T.E.S', 'hp_bp_rating_avg', 'ctl_bp_rating_avg', 'snd_bp_rating_avg']]
+        aggregated_players[['team_id', 'year', 'SlayerRating', 'TES']] = self.players[['team_id', 'year', 'Slayer Rating', 'T.E.S']]
         aggregated_players['KD'] = self.players['K/D'] / self.players['Maps']
         aggregated_players['NonTradedKills'] = self.players['Non-Traded Kills'] / self.players['Maps']
         aggregated_players['HP_KD'] = self.players['HP KD'] / self.players['HP Maps']
@@ -227,11 +276,7 @@ class Breakpoint():
             'CTL_K10M': 'mean',
             'CTL_DMG10M': 'mean',
             'CTL_Eng10M': 'mean',
-            'CTL_Zone_Captures': 'mean',
-            'hp_bp_rating_avg': 'first',
-            'ctl_bp_rating_avg': 'first',
-            'snd_bp_rating_avg': 'first'
-            # Add more columns as needed
+            'CTL_Zone_Captures': 'mean'
         }).reset_index()
         
         self.team_standings['team_id'] = self.team_standings['team_id'].astype(float)
@@ -268,9 +313,10 @@ class Breakpoint():
         # Drop redundant columns to avoid confusion
         columns_to_drop = ['team_id_team1', 'year_team1', 'team_id_team2', 'year_team2']
         self.match_with_teams = match_with_teams.drop(columns=columns_to_drop, errors='ignore')
+        self.match_with_teams = self.augment_data_team_swapping(self.match_with_teams)
+        self.match_with_teams = self.augment_data_with_noise(self.match_with_teams)
         del match_with_teams
         del match_with_team1
-        print(self.match_with_teams.columns)
         
         relative_metrics = [
             'MW', 'ML', 'MW%', 'GW',
@@ -283,8 +329,7 @@ class Breakpoint():
             'HP_OBJ10M', 'HP_Eng10M', 'SND_KD', 'SND_KPR',
             'SND_FB', 'SND_FD', 'SND_FB_Percent', 'SND_OBJ',
             'CTL_KD', 'CTL_K10M', 'CTL_DMG10M',
-            'CTL_Eng10M', 'CTL_Zone_Captures', 'hp_bp_rating_avg',
-            'ctl_bp_rating_avg', 'snd_bp_rating_avg']
+            'CTL_Eng10M', 'CTL_Zone_Captures']
         
         self.match_with_teams = self.match_with_teams.apply(pd.to_numeric, errors='coerce')
         
@@ -295,7 +340,6 @@ class Breakpoint():
             )
         columns_to_drop = [f'{col}_team1' for col in relative_metrics] + [f'{col}_team2' for col in relative_metrics]
         self.match_with_teams = self.match_with_teams.drop(columns=columns_to_drop)
-        print(self.match_with_teams)
         
         # Columns to normalize
         columns_to_normalize = [
@@ -309,8 +353,7 @@ class Breakpoint():
             'HP_OBJ10M_diff', 'HP_Eng10M_diff', 'SND_KD_diff', 'SND_KPR_diff',
             'SND_FB_diff', 'SND_FD_diff', 'SND_FB_Percent_diff', 'SND_OBJ_diff',
             'CTL_KD_diff', 'CTL_K10M_diff', 'CTL_DMG10M_diff',
-            'CTL_Eng10M_diff', 'CTL_Zone_Captures_diff', 'hp_bp_rating_avg_diff',
-            'ctl_bp_rating_avg_diff', 'snd_bp_rating_avg_diff'
+            'CTL_Eng10M_diff', 'CTL_Zone_Captures_diff'
         ]
         
         # Initialize the scaler
@@ -325,7 +368,82 @@ class Breakpoint():
         self.match_with_teams = self.match_with_teams.rename(columns={"spreadsheet_id": "year"})
 
         print(self.match_with_teams)
-    
+        print(self.match_with_teams.columns)
+        
+    def augment_data_team_swapping(self, data, percentage=0.5):
+        """
+        Perform team swapping to augment data.
+        """
+        columns = list(data.columns)
+        # Calculate the number of rows to augment
+        n_swap = int(len(data.columns) * percentage)
+
+        for i in range(len(columns)):
+            if "team1" in columns[i]:
+                columns[i] = columns[i].replace("team1", "team2")
+            elif "team2" in columns[i]:
+                columns[i] = columns[i].replace("team2", "team1")
+            elif "team_1" in columns[i]:
+                columns[i] = columns[i].replace("1", "2")
+            elif "team_2" in columns[i]:
+                columns[i] = columns[i].replace("2", "1")
+        
+        to_swap = data.sample(n=n_swap, random_state=42).copy()
+        
+        to_swap.columns = columns
+        to_swap = to_swap[data.columns]
+
+        to_swap = to_swap.reset_index(drop=True)
+        data = data.reset_index(drop=True)
+        return pd.concat([data,to_swap], ignore_index=True)
+
+    def augment_data_with_noise(self, data, percentage=0.25):
+        """
+        Add random noise to numeric columns to augment data.
+        """
+        # Calculate min and max for each column
+        use_columns = ['MW_team1', 'ML_team1', 'MW%_team1', 'GW_team1',
+        'GL_team1', 'GW%_team1', 'K/D_team1', 'HP Win %_team1',
+        'HP K/D_team1', 'HP Score_team1', 'HP +/-_team1', 'S&D Win %_team1',
+        'S&D K/D_team1', 'S&D Round Wins_team1', 'S&D +/-_team1',
+        'CTL Win %_team1', 'CTL K/D_team1', 'CTL Round Wins_team1',
+        'CTL Round +/-_team1', 'SlayerRating_team1', 'TES_team1', 'KD_team1',
+        'NonTradedKills_team1', 'HP_KD_team1', 'HP_K10M_team1',
+        'HP_OBJ10M_team1', 'HP_Eng10M_team1', 'SND_KD_team1', 'SND_KPR_team1',
+        'SND_FB_team1', 'SND_FD_team1', 'SND_FB_Percent_team1', 'SND_OBJ_team1',
+        'CTL_KD_team1', 'CTL_K10M_team1', 'CTL_DMG10M_team1',
+        'CTL_Eng10M_team1', 'CTL_Zone_Captures_team1', 'MW_team2', 'ML_team2',
+        'MW%_team2', 'GW_team2', 'GL_team2', 'GW%_team2',
+        'K/D_team2', 'HP Win %_team2', 'HP K/D_team2', 'HP Score_team2',
+        'HP +/-_team2', 'S&D Win %_team2', 'S&D K/D_team2',
+        'S&D Round Wins_team2', 'S&D +/-_team2', 'CTL Win %_team2',
+        'CTL K/D_team2', 'CTL Round Wins_team2', 'CTL Round +/-_team2',
+        'SlayerRating_team2', 'TES_team2', 'KD_team2', 'NonTradedKills_team2',
+        'HP_KD_team2', 'HP_K10M_team2', 'HP_OBJ10M_team2', 'HP_Eng10M_team2',
+        'SND_KD_team2', 'SND_KPR_team2', 'SND_FB_team2', 'SND_FD_team2',
+        'SND_FB_Percent_team2', 'SND_OBJ_team2', 'CTL_KD_team2',
+        'CTL_K10M_team2', 'CTL_DMG10M_team2', 'CTL_Eng10M_team2',
+        'CTL_Zone_Captures_team2']
+        
+        min_max = data[use_columns].describe().loc[['min', 'max']].transpose()
+        # Calculate the number of rows to augment
+        n_augment = int(len(data) * percentage)
+
+        # Sample rows to augment
+        rows_to_augment = data.sample(n=n_augment, random_state=42).copy()
+
+        # Add small noise to numeric columns
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            if col in use_columns:
+                noise = np.random.normal(0, 0.08, size=rows_to_augment[col].shape)
+                rows_to_augment[col] += noise
+
+        # Combine with original data
+        augmented_data = pd.concat([data, rows_to_augment], ignore_index=True)
+        
+        return augmented_data
+                
     def train_modal_1(self):
         print("training")
         # Prepare features and target
@@ -491,7 +609,7 @@ class Breakpoint():
             # Add small random noise to numeric features
             numeric_features = upcoming_matches_stats.select_dtypes(include=['float64', 'int64']).columns
             noisy_numeric = upcoming_matches_stats[numeric_features].copy()
-            noise = np.random.normal(0, 0.05, size=noisy_numeric.shape)
+            noise = np.random.normal(0, 0.15, size=noisy_numeric.shape)
             noisy_numeric += noise
 
             # Combine numeric and categorical features
@@ -516,222 +634,12 @@ class Breakpoint():
         print("\nPrediction Results:")
         print(upcoming_matches_stats[['team_1_win_prob', 'team_2_win_prob', 'winner_pred']])
 
-    # def train_modal_1(self):
-    #     X = self.match_with_teams.drop(columns=['team_1_score', 'team_2_score', 'winner_id'])
-    #     y_winner = self.match_with_teams['winner_id']  # Classification target
-        
-    #     # Remove low-variance features
-    #     # low_variance_features = X.columns[X.var() == 0].tolist()
-    #     # if low_variance_features:
-    #     #     print("Dropping low-variance features:", low_variance_features)
-    #     #     X = X.drop(columns=low_variance_features)
-
-    #     self.training_features = X.columns.tolist()
-
-    #     # Train-test split
-    #     X_train, X_test, y_train, y_test = train_test_split(
-    #         X, y_winner, test_size=0.15, random_state=42
-    #     )
-
-    #     # Updated parameter grid
-    #     param_dist = {
-    #         'num_leaves': [31, 63, 127],
-    #         'max_depth': [10, 15, 20],
-    #         'learning_rate': [0.01, 0.05, 0.1],
-    #         'n_estimators': [500],  # High value for early stopping
-    #         'subsample': [0.7, 0.8, 1.0],
-    #         'colsample_bytree': [0.7, 0.9, 1.0],
-    #         'min_child_weight': [0.1, 1, 3],
-    #         'min_gain_to_split': [0.1],  # Prevent insignificant splits
-    #     }
-
-    #     lgbm = LGBMClassifier(random_state=42, class_weight='balanced', boosting_type='gbdt',verbose=-1)
-
-    #     cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        
-    #     random_search = RandomizedSearchCV(
-    #         estimator=lgbm,
-    #         param_distributions=param_dist,
-    #         n_iter=50,
-    #         scoring='accuracy',
-    #         cv=cv_strategy,
-    #         verbose=2,
-    #         random_state=42,
-    #         n_jobs=-1
-    #     )
-
-    #     # Fit LightGBM
-    #     random_search.fit(
-    #         X_train, y_train,
-    #         eval_set=[(X_test, y_test)],
-    #         eval_metric='accuracy',
-    #         callbacks=[
-    #             early_stopping(stopping_rounds=50),
-    #             log_evaluation(10)
-    #         ],
-    #         categorical_feature=self.training_features  # Add this parameter
-    #     )
-    #     best_lgbm = random_search.best_estimator_
-
-    #     # Predictions and evaluation
-    #     y_pred = best_lgbm.predict(X_test)
-    #     accuracy = accuracy_score(y_test, y_pred)
-
-    #     print("Accuracy with LightGBM:", accuracy)
-    #     print("Classification Report:")
-    #     print(classification_report(y_test, y_pred))
-
-    #     self.best_model = best_lgbm
-        
-    #     # Feature importance analysis
-    #     # lgb.plot_importance(best_lgbm, max_num_features=20)
-    #     # plt.show()
-
-    #     # # Calibrate with Platt scaling
-    #     # self.calibrated_classifier = CalibratedClassifierCV(best_rf, method='sigmoid', cv=cv_strategy)
-    #     # self.calibrated_classifier.fit(X_train, y_winner_train)
-
-    #     # Evaluate on the test set
-    #     # y_pred = self.calibrated_classifier.predict(X_test)
-    #     # accuracy = accuracy_score(y_winner_test, y_pred)
-
-    #     # print("Accuracy after tuning and calibration:", accuracy)
-    #     # print("Classification Report:")
-    #     # print(classification_report(y_winner_test, y_pred))
-
-    # def prediction1(self):
-    #     # Load upcoming games and preprocess
-    #     self.upcoming_games = pd.read_csv("data/upcoming_games.csv", header=0)
-    #     self.upcoming_games['year'] = '2025'
-
-    #     # Map team1_name and team2_name to their respective IDs
-    #     team_id_map = dict(zip(self.standing_current['name_short'], self.standing_current['id']))
-    #     self.upcoming_games['team1_id'] = self.upcoming_games['team_1_name'].map(team_id_map)
-    #     self.upcoming_games['team2_id'] = self.upcoming_games['team_2_name'].map(team_id_map)
-    #     self.upcoming_games['year'] = self.upcoming_games['year'].astype(int)
-
-    #     self.upcoming_games['team1_id'] = self.upcoming_games['team1_id'].astype(int)
-    #     self.upcoming_games['team2_id'] = self.upcoming_games['team2_id'].astype(int)
-        
-    #     # Prepare stats for upcoming games
-    #     match_with_team1 = pd.merge(
-    #         self.upcoming_games,
-    #         self.aggregated_team_averages,
-    #         left_on=['team1_id', 'year'],
-    #         right_on=['team_id', 'year'],
-    #         suffixes=('', '_team1'),
-    #         how='left'
-    #     )
-    #     match_with_team2 = pd.merge(
-    #         match_with_team1,
-    #         self.aggregated_team_averages,
-    #         left_on=['team2_id', 'year'],
-    #         right_on=['team_id', 'year'],
-    #         suffixes=('_team1', '_team2'),
-    #         how='left'
-    #     )
-        
-    #     # Concatenate and clean
-    #     upcoming_matches_stats = match_with_team2.drop(columns=['team1_id', 'team2_id'], errors='ignore')
-        
-    #     # Compute relative metrics
-    #     relative_metrics = [
-    #         'MW', 'ML', 'MW%', 'GW',
-    #         'GL', 'GW%', 'K/D', 'HP Win %',
-    #         'HP K/D', 'HP Score', 'HP +/-', 'S&D Win %',
-    #         'S&D K/D', 'S&D Round Wins', 'S&D +/-',
-    #         'CTL Win %', 'CTL K/D', 'CTL Round Wins',
-    #         'CTL Round +/-', 'SlayerRating', 'TES', 'KD',
-    #         'NonTradedKills', 'HP_KD', 'HP_K10M',
-    #         'HP_OBJ10M', 'HP_Eng10M', 'SND_KD', 'SND_KPR',
-    #         'SND_FB', 'SND_FD', 'SND_FB_Percent', 'SND_OBJ',
-    #         'CTL_KD', 'CTL_K10M', 'CTL_DMG10M',
-    #         'CTL_Eng10M', 'CTL_Zone_Captures', 'hp_bp_rating_avg',
-    #         'ctl_bp_rating_avg', 'snd_bp_rating_avg']
-    #     for metric in relative_metrics:
-    #         upcoming_matches_stats[f'{metric}_diff'] = (
-    #             upcoming_matches_stats[f'{metric}_team1'] - upcoming_matches_stats[f'{metric}_team2']
-    #         )
-    #     columns_to_drop = [f'{col}_team1' for col in relative_metrics] + [f'{col}_team2' for col in relative_metrics]
-    #     upcoming_matches_stats = upcoming_matches_stats.drop(columns=columns_to_drop, errors='ignore')
-        
-    #     # Normalize columns
-    #     columns_to_normalize = [
-    #         'MW_diff', 'ML_diff', 'MW%_diff', 'GW_diff',
-    #         'GL_diff', 'GW%_diff', 'K/D_diff', 'HP Win %_diff',
-    #         'HP K/D_diff', 'HP Score_diff', 'HP +/-_diff', 'S&D Win %_diff',
-    #         'S&D K/D_diff', 'S&D Round Wins_diff', 'S&D +/-_diff',
-    #         'CTL Win %_diff', 'CTL K/D_diff', 'CTL Round Wins_diff',
-    #         'CTL Round +/-_diff', 'SlayerRating_diff', 'TES_diff', 'KD_diff',
-    #         'NonTradedKills_diff', 'HP_KD_diff', 'HP_K10M_diff',
-    #         'HP_OBJ10M_diff', 'HP_Eng10M_diff', 'SND_KD_diff', 'SND_KPR_diff',
-    #         'SND_FB_diff', 'SND_FD_diff', 'SND_FB_Percent_diff', 'SND_OBJ_diff',
-    #         'CTL_KD_diff', 'CTL_K10M_diff', 'CTL_DMG10M_diff',
-    #         'CTL_Eng10M_diff', 'CTL_Zone_Captures_diff', 'hp_bp_rating_avg_diff',
-    #         'ctl_bp_rating_avg_diff', 'snd_bp_rating_avg_diff'
-    #     ]
-    #     upcoming_matches_stats[columns_to_normalize] = self.scaler.transform(upcoming_matches_stats[columns_to_normalize])
-
-    #     # Align with training features
-    #     upcoming_matches_stats = upcoming_matches_stats[self.training_features]
-
-    #     # Predict outcomes
-    #     # winner_predictions = self.classifier.predict(upcoming_matches_stats)
-    #     # upcoming_matches_stats['winner_pred'] = winner_predictions
-
-    #     # print("\nPrediction Results:")
-    #     # print(upcoming_matches_stats[['winner_pred']])
-        
-    #     # Number of simulations
-    #     n_simulations = 10000
-        
-    #     simulated_winner_predictions = [] # Placeholder for predictions
-    #     simulated_team_1_scores = []  # Store Team 1 scores
-    #     simulated_team_2_scores = []  # Store Team 2 scores
-        
-    #     # Run predictions 10,000 times
-    #     for i in range(n_simulations):
-    #         # Print the current iteration on the same line
-    #         sys.stdout.write(f"\rSimulation {i + 1}/{n_simulations}")
-    #         sys.stdout.flush()
-
-    #         # Add small random noise to features
-    #         noisy_features = upcoming_matches_stats[self.training_features].copy()
-    #         noise = np.random.normal(0, 0.05, size=noisy_features.shape)  # Adjust scale as needed
-    #         noisy_features += noise
-
-    #         # Predict winners
-    #         winner_predictions = self.best_model.predict(noisy_features)
-    #         simulated_winner_predictions.append(winner_predictions)
-            
-    #         # # Predict scores
-    #         # score_predictions = self.regressor.predict(upcoming_matches_stats)
-    #         # simulated_team_1_scores.append(score_predictions[:, 0])  # Team 1 scores
-    #         # simulated_team_2_scores.append(score_predictions[:, 1])  # Team 2 scores
-
-    #     # Convert predictions to NumPy arrays
-    #     simulated_winner_predictions = np.array(simulated_winner_predictions)
-    #     # simulated_team_1_scores = np.array(simulated_team_1_scores)
-    #     # simulated_team_2_scores = np.array(simulated_team_2_scores)
-
-    #     # Calculate probabilities for winner predictions
-    #     team_1_win_prob = (simulated_winner_predictions == 0).mean(axis=0)
-    #     team_2_win_prob = (simulated_winner_predictions == 1).mean(axis=0)
-        
-    #     upcoming_matches_stats['team_1_win_prob'] = team_1_win_prob
-    #     upcoming_matches_stats['team_2_win_prob'] = team_2_win_prob
-    #     upcoming_matches_stats['winner_pred'] = np.where(team_1_win_prob > team_2_win_prob, 0, 1)
-    #     # upcoming_matches_stats['team_1_score_pred'] = team_1_score_avg
-    #     # upcoming_matches_stats['team_2_score_pred'] = team_2_score_avg
-    #     print("\n")
-    #     print(upcoming_matches_stats[['team_1_win_prob', 'team_2_win_prob','winner_pred']])
-
     def init(self):
-        print("dBreakpoint init")
+        self.urlHash = None
+        print("Breakpoint init")
         self.dbconnector()
+        self.getUrlHash()
         self.load_data()
         self.FeatureEng()
-        # self.FeatureEngineering()
         self.train_modal_1()
-        # self.prediction()
         self.prediction1()

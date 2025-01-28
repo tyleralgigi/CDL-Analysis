@@ -9,11 +9,12 @@ import re
 import numpy as np
 from io import StringIO
 from time import sleep
-from selenium import webdriver
+from selenium import webdriver as webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from seleniumwire import webdriver as webdriverwire
 
 class CDL_Worker:
     def dbconnector(self):
@@ -28,11 +29,17 @@ class CDL_Worker:
             self.config = json.load(f)
             self.endpoints = self.config['API']['endpoints']
             self.apikey = self.config['API']['apikey'] #this is the key used in breakpoint api calls (is subject to be removed at any point)
-            
+        
+        self.getUrlHash()
+        
         for endpoint in self.endpoints:
             print(self.config[endpoint]['url'])
             for url in self.config[endpoint]['url']:
-                self.url = url
+                if "REPLACE" in url:
+                    self.url = str(url).replace("REPLACE", self.urlHash)
+                    print(f"replaced: {self.url}")
+                else:
+                    self.url = url
                 self.tableName = self.config[endpoint]['table_name']
                 
                 eval(self.config[endpoint]['method'])
@@ -81,7 +88,7 @@ class CDL_Worker:
         self.df = pd.DataFrame()
         response = requests.get(self.url)
         if response.status_code == 200:
-            print(response.status_code )
+            print(response.status_code)
             response_df = response.json()
             # Get the keys
             keys = response_df['pageProps'].keys()
@@ -106,8 +113,6 @@ class CDL_Worker:
         else:
             print(f"Failed to retrieve webpage: {response.status_code}")
                 
-        
-
     def breakpoint_playerStats(self):
         #Creating rolling averages for players the past 2 games
         #get team ids
@@ -176,6 +181,19 @@ class CDL_Worker:
             self.df['teamId'] = rolling_team_data_df['teamId']
             self.loader("replace")
 
+    def current_rosters(self):
+        self.getUrlHash()
+        advanced_json = requests.get(f'https://www.breakingpoint.gg/_next/data/{self.urlHash}/stats/advanced.json')
+        advanced_json_data = advanced_json.json()
+        self.advanced_all_players = pd.DataFrame(advanced_json_data['pageProps']['allPlayers'])
+        # self.advanced_all_teams = pd.DataFrame(advanced_json_data['pageProps']['allTeams'])
+        # self.advanced_all_teams.rename(columns={'id': 'team_id'}, inplace=True)
+        self.advanced_all_players = self.advanced_all_players[~self.advanced_all_players['tag'].str.contains("KingAbody|Khhx")]
+        print(self.advanced_all_players)
+        self.advanced_all_players.dropna()
+        print(self.advanced_all_players)
+        self.advanced_all_players[['id', 'tag', 'current_team_id']].to_sql(self.tableName, self.engine, if_exists="replace", index=False)
+    
     def check_ids(self):
         # Check if the table exists in the database
         with self.engine.connect() as conn:
@@ -366,6 +384,40 @@ class CDL_Worker:
             print(self.tableName)
             self.loader("replace")
 
+    def getUrlHash(self):
+        self.urlHash = None
+        # Configure Selenium WebDriver
+        options = webdriverwire.ChromeOptions()
+        options.add_argument("--headless")  # Run in headless mode
+        options.add_argument("--disable-gpu")  # Disable GPU (for older systems)
+        options.add_argument("--no-sandbox")  # Bypass OS security model
+        options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
+        driver = webdriverwire.Chrome(options=options)
+
+        # Navigate to the website
+        driver.get("https://www.breakingpoint.gg/stats/teams/advanced")
+
+        print("sleepy time")
+        sleep(5)
+
+        # Find the hash in network requests
+        for request in driver.requests:
+            if "_next/data" in request.url:
+                print(request.url)
+                self.urlHash = request.url.split("/_next/data/")[1].split("/")[0]
+                print(self.urlHash)
+                # Extract the hash between "data/" and "/matches.json"
+                # hash_value = request.url.split("/_next/data/")[1].split("/matches.json")[0]
+                break
+
+        if self.urlHash:
+            print(f"Hash Value: {self.urlHash}")
+        else:
+            print("Hash not found in network requests.")
+
+        # Quit the driver
+        driver.quit()
+    
     def transform(self):
         print("Transforming - Adding rundate")
         now = datetime.now()
@@ -374,15 +426,18 @@ class CDL_Worker:
     def loader(self,method):
         print("Loading into DB")
         # Insert the DataFrame into a table
-        print(self.df)
+        # print(self.df)
         if not self.df.empty:
-            print("adding rows")
+            print(f"adding rows to {self.tableName}")
             self.df.to_sql(self.tableName, self.engine, if_exists=method, index=False)
-            print("here")
         else:
             print("empty df, not adding anything")
 
     def init(self):
+        self.urlHash = None
+        self.config = None
+        self.endpoints = None
+        self.apikey = None
         self.dbconnector()
         self.iterator()
         
