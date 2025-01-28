@@ -4,7 +4,7 @@ import analytics.data_analysis_1 as Data_Analysis_1
 import analytics.breakpoint as Breakpoint
 
 def main():
-    # worker.CDL_Worker().init()
+    worker.CDL_Worker().init()
     # data_analysis.Data_Analysis().init()
     # analysis = Data_Analysis_1.Data_Analysis_1()
     analysis = Breakpoint.Breakpoint()

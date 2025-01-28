@@ -571,8 +571,7 @@ class Breakpoint():
             'HP_OBJ10M', 'HP_Eng10M', 'SND_KD', 'SND_KPR',
             'SND_FB', 'SND_FD', 'SND_FB_Percent', 'SND_OBJ',
             'CTL_KD', 'CTL_K10M', 'CTL_DMG10M',
-            'CTL_Eng10M', 'CTL_Zone_Captures', 'hp_bp_rating_avg',
-            'ctl_bp_rating_avg', 'snd_bp_rating_avg'
+            'CTL_Eng10M', 'CTL_Zone_Captures'
         ]
         for metric in relative_metrics:
             upcoming_matches_stats[f'{metric}_diff'] = (
