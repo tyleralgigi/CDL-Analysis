@@ -112,7 +112,7 @@ class CDL_Worker:
             # self.check_ids() #Comment this line out on first run to not get table not found error
         else:
             print(f"Failed to retrieve webpage: {response.status_code}")
-                
+
     def breakpoint_playerStats(self):
         #Creating rolling averages for players the past 2 games
         #get team ids
@@ -193,6 +193,11 @@ class CDL_Worker:
         self.advanced_all_players.dropna()
         print(self.advanced_all_players)
         self.advanced_all_players[['id', 'tag', 'current_team_id']].to_sql(self.tableName, self.engine, if_exists="replace", index=False)
+    
+    def breakpoint_team_stats(self):
+        print('')
+        self.df = pd.DataFrame()
+        
     
     def check_ids(self):
         # Check if the table exists in the database

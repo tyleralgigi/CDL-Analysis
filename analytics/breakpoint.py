@@ -598,7 +598,7 @@ class Breakpoint():
         upcoming_matches_stats = upcoming_matches_stats[self.training_features]
 
         # Simulate predictions
-        n_simulations = 10000
+        n_simulations = 15000
         simulated_winner_predictions = []
 
         for i in range(n_simulations):

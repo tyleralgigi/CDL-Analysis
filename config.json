@@ -3,6 +3,11 @@
         "endpoints": ["current_rosters"],
         "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcGlpdWZ4Y2NpdWp1Z3pqdmd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NjE3ODg0MDgsImV4cCI6MTk3NzM2NDQwOH0.hwvv0krVgonNDoM7liZoUxKGgyff2BCNGnC0iCZKyJM"
     },
+    "breakpoint_team_stats":{
+        "url": ["https://www.breakingpoint.gg/_next/data/REPLACE/stats/advanced.json"],
+        "table_name": "team_stats",
+        "method": "self.breakpoint_team_stats()"
+    },
     "breakpoint_players":{
         "url": ["https://www.breakingpoint.gg/api/playerStats"],
         "table_name": "playerStats",
